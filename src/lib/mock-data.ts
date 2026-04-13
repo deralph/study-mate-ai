@@ -81,11 +81,11 @@ export interface Resource {
 
 export const mockUser: User = {
   id: '1',
-  name: 'Adebayo Ogunlade',
-  email: 'adebayo@unilag.edu.ng',
+  name: 'Omolara Adeyemi',
+  email: 'omolara@aaua.edu.ng',
   department: 'Computer Science',
   year: '300 Level',
-  university: 'University of Lagos',
+  university: 'Adekunle Ajasin University (AAUA)',
   studyStreak: 12,
   level: 7,
 };
