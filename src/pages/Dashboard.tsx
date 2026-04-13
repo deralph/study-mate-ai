@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Flame, Clock, BookOpen, Trophy, Upload, Play, MessageSquare, BarChart3, Wifi, WifiOff, Smartphone, Monitor, Zap, ChevronRight } from 'lucide-react';
-import { mockUser, mockMaterials } from '@/lib/mock-data';
+import { mockMaterials } from '@/lib/mock-data';
+import { useAuth } from '@/lib/auth-context';
 import { Link } from 'react-router-dom';
 
 const getGreeting = () => {
@@ -9,13 +10,6 @@ const getGreeting = () => {
   if (hour < 17) return 'Good Afternoon';
   return 'Good Evening';
 };
-
-const statsCards = [
-  { label: 'Study Hours', value: '48.5', icon: Clock, color: 'bg-primary/10 text-primary' },
-  { label: 'Materials', value: '12', icon: BookOpen, color: 'bg-secondary/10 text-secondary' },
-  { label: 'Quizzes Done', value: '8', icon: Trophy, color: 'bg-accent/10 text-accent' },
-  { label: 'Level', value: `${mockUser.level}`, icon: Zap, color: 'bg-primary/10 text-primary' },
-];
 
 const quickActions = [
   { label: 'Upload Material', icon: Upload, to: '/materials', color: 'gradient-primary' },
@@ -32,24 +26,32 @@ const recentActivity = [
 ];
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const isOnline = navigator.onLine;
+
+  const statsCards = [
+    { label: 'Study Hours', value: '48.5', icon: Clock, color: 'bg-primary/10 text-primary' },
+    { label: 'Materials', value: '12', icon: BookOpen, color: 'bg-secondary/10 text-secondary' },
+    { label: 'Quizzes Done', value: '8', icon: Trophy, color: 'bg-accent/10 text-accent' },
+    { label: 'Level', value: `${user?.level ?? 1}`, icon: Zap, color: 'bg-primary/10 text-primary' },
+  ];
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
       {/* Greeting */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-1">
         <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
-          {getGreeting()}, {mockUser.name.split(' ')[0]} 👋
+          {getGreeting()}, {user?.name?.split(' ')[0] ?? 'Student'} 👋
         </h1>
         <p className="text-muted-foreground text-sm">Ready to learn something new today?</p>
       </motion.div>
 
       {/* Study Streak */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="gradient-primary rounded-2xl p-5 text-primary-foreground flex items-center justify-between">
+        className="gradient-primary rounded-2xl p-5 text-primary-foreground flex items-center justify-between shadow-elevated">
         <div>
           <p className="text-sm opacity-90">Current Study Streak</p>
-          <p className="text-3xl font-bold">{mockUser.studyStreak} days</p>
+          <p className="text-3xl font-bold">{user?.studyStreak ?? 0} days</p>
           <p className="text-xs opacity-75 mt-1">Keep going! You&apos;re on fire 🔥</p>
         </div>
         <div className="text-5xl">
@@ -61,7 +63,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statsCards.map((stat, i) => (
           <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 + i * 0.05 }}
-            className="bg-card rounded-xl p-4 shadow-card">
+            className="bg-card/80 backdrop-blur-sm rounded-xl p-4 shadow-card border border-border/50">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${stat.color}`}>
               <stat.icon className="h-5 w-5" />
             </div>
@@ -73,7 +75,7 @@ export default function Dashboard() {
 
       {/* Context Indicator */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-        className="bg-card rounded-xl p-4 shadow-card flex items-center gap-4 text-sm">
+        className="bg-card/80 backdrop-blur-sm rounded-xl p-4 shadow-card border border-border/50 flex items-center gap-4 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
           {typeof window !== 'undefined' && window.innerWidth < 768 ? <Smartphone className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
           <span>{typeof window !== 'undefined' && window.innerWidth < 768 ? 'Mobile' : 'Desktop'}</span>
@@ -97,7 +99,7 @@ export default function Dashboard() {
           {quickActions.map((action, i) => (
             <motion.div key={action.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 + i * 0.05 }}>
               <Link to={action.to}
-                className={`${action.color} rounded-xl p-4 text-center flex flex-col items-center gap-2 text-primary-foreground hover:opacity-90 transition-opacity`}>
+                className={`${action.color} rounded-xl p-4 text-center flex flex-col items-center gap-2 text-primary-foreground hover:opacity-90 transition-opacity shadow-elevated`}>
                 <action.icon className="h-6 w-6" />
                 <span className="text-sm font-medium">{action.label}</span>
               </Link>
@@ -109,7 +111,7 @@ export default function Dashboard() {
       {/* Recent Activity */}
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3">Recent Activity</h2>
-        <div className="bg-card rounded-xl shadow-card divide-y divide-border">
+        <div className="bg-card/80 backdrop-blur-sm rounded-xl shadow-card border border-border/50 divide-y divide-border/50">
           {recentActivity.map((item, i) => (
             <div key={i} className="p-4 flex items-center justify-between">
               <p className="text-sm text-foreground">{item.text}</p>
@@ -129,7 +131,7 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {mockMaterials.slice(0, 4).map((mat) => (
-            <div key={mat.id} className="bg-card rounded-xl p-4 shadow-card flex items-start gap-3">
+            <div key={mat.id} className="bg-card/80 backdrop-blur-sm rounded-xl p-4 shadow-card border border-border/50 flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
                 {mat.fileType}
               </div>
