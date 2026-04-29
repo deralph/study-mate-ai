@@ -1,40 +1,58 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Mic, Sparkles, BookOpen, FileQuestion, FileText, RotateCcw } from 'lucide-react';
-import { mockChatMessages, type ChatMessage } from '@/lib/mock-data';
+import { Send, Sparkles, FileQuestion, FileText, RotateCcw, AlertCircle } from 'lucide-react';
+import { chatApi, type ApiChatMessage } from '@/lib/api';
+import { toast } from 'sonner';
 
 const quickChips = [
-  { label: 'Explain this concept', icon: Sparkles },
-  { label: 'Create quiz', icon: FileQuestion },
-  { label: 'Summarize material', icon: FileText },
+  { label: 'Explain this concept to me', icon: Sparkles },
+  { label: 'Create practice quiz questions', icon: FileQuestion },
+  { label: 'Summarize my uploaded notes', icon: FileText },
 ];
 
 export default function Chat() {
-  const [messages, setMessages] = useState<ChatMessage[]>(mockChatMessages);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ApiChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatApi.createSession().then(({ session }) => setSessionId(session.id)).catch(() => toast.error('Failed to start chat session'));
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing]);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: input, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
-    setMessages((prev) => [...prev, userMsg]);
+  const sendMessage = async () => {
+    if (!input.trim() || !sessionId || typing) return;
+    const text = input.trim();
     setInput('');
     setTyping(true);
-    setTimeout(() => {
+    setError('');
+
+    setMessages(prev => [...prev, {
+      id: `tmp-${Date.now()}`, role: 'user', content: text, references: [],
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    }]);
+
+    try {
+      const { userMessage, aiMessage } = await chatApi.sendMessage(sessionId, text);
+      setMessages(prev => [...prev.slice(0, -1), userMessage, aiMessage]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'AI failed to respond';
+      setError(msg);
+      setMessages(prev => prev.slice(0, -1));
+    } finally {
       setTyping(false);
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(), role: 'ai',
-        content: "That's a great question! Based on your uploaded materials, I can help you understand this better. Would you like me to break it down step by step or provide practice problems?",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        references: ['Data Structures & Algorithms'],
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-    }, 1500);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    chatApi.createSession().then(({ session }) => setSessionId(session.id)).catch(() => {});
   };
 
   return (
@@ -47,22 +65,12 @@ export default function Chat() {
           </div>
           <div>
             <h1 className="text-base font-semibold text-foreground">StudyAI Assistant</h1>
-            <p className="text-xs text-secondary">● Online</p>
+            <p className="text-xs text-secondary">● Powered by Gemini</p>
           </div>
         </div>
-        <button onClick={() => setMessages([])} className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition" title="Clear chat">
+        <button onClick={clearChat} className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition" title="New chat">
           <RotateCcw className="h-4 w-4" />
         </button>
-      </div>
-
-      {/* Context pills */}
-      <div className="px-4 py-2 border-b border-border bg-card flex gap-2 overflow-x-auto shrink-0">
-        <span className="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full whitespace-nowrap flex items-center gap-1">
-          <BookOpen className="h-3 w-3" /> Data Structures & Algorithms
-        </span>
-        <span className="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full whitespace-nowrap flex items-center gap-1">
-          <BookOpen className="h-3 w-3" /> Operating Systems Notes
-        </span>
       </div>
 
       {/* Messages */}
@@ -73,7 +81,7 @@ export default function Chat() {
               <Sparkles className="h-8 w-8 text-primary-foreground" />
             </div>
             <h2 className="text-lg font-semibold text-foreground">How can I help you study?</h2>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">Ask me anything about your uploaded materials. I can explain concepts, create quizzes, and summarize notes.</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm">Ask me anything. I can explain concepts, create quizzes, and summarize your uploaded notes.</p>
           </div>
         )}
 
@@ -98,11 +106,17 @@ export default function Chat() {
           <div className="flex justify-start">
             <div className="bg-card shadow-card rounded-2xl rounded-bl-md px-4 py-3">
               <div className="flex gap-1">
-                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-soft" />
-                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-soft" style={{ animationDelay: '0.2s' }} />
-                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse-soft" style={{ animationDelay: '0.4s' }} />
+                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0s' }} />
+                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0.15s' }} />
+                <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0.3s' }} />
               </div>
             </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 rounded-xl px-4 py-3">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
           </div>
         )}
         <div ref={bottomRef} />
@@ -124,12 +138,9 @@ export default function Chat() {
       <div className="px-4 py-3 border-t border-border bg-card shrink-0">
         <div className="flex items-center gap-2 max-w-3xl mx-auto">
           <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask anything about your studies..."
-            onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             className="flex-1 px-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          <button className="p-2.5 rounded-xl hover:bg-muted text-muted-foreground transition">
-            <Mic className="h-5 w-5" />
-          </button>
-          <button onClick={sendMessage} disabled={!input.trim()}
+          <button onClick={sendMessage} disabled={!input.trim() || typing || !sessionId}
             className="p-2.5 rounded-xl gradient-primary text-primary-foreground disabled:opacity-40 transition">
             <Send className="h-5 w-5" />
           </button>

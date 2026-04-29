@@ -1,26 +1,47 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, Plus, Trash2, Clock, Repeat } from 'lucide-react';
-import { mockReminders, type Reminder } from '@/lib/mock-data';
+import { remindersApi, type ApiReminder } from '@/lib/api';
 import { toast } from 'sonner';
 
 export default function Reminders() {
-  const [reminders, setReminders] = useState<Reminder[]>(mockReminders);
+  const [reminders, setReminders] = useState<ApiReminder[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
-  const [recurrence, setRecurrence] = useState<Reminder['recurrence']>('once');
+  const [recurrence, setRecurrence] = useState('once');
 
-  const toggleReminder = (id: string) => {
-    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+  useEffect(() => {
+    remindersApi.list().then(d => setReminders(d.reminders)).catch(() => toast.error('Failed to load reminders'));
+  }, []);
+
+  const toggleReminder = async (id: string) => {
+    const rem = reminders.find(r => r.id === id);
+    if (!rem) return;
+    try {
+      const { reminder } = await remindersApi.update(id, { enabled: !rem.enabled });
+      setReminders(prev => prev.map(r => r.id === id ? reminder : r));
+    } catch { toast.error('Failed to update reminder'); }
   };
 
-  const addReminder = () => {
+  const addReminder = async () => {
     if (!title.trim() || !time) return;
-    const newR: Reminder = { id: Date.now().toString(), title, time, recurrence, enabled: true };
-    setReminders((prev) => [...prev, newR]);
-    setTitle(''); setTime(''); setRecurrence('once'); setShowForm(false);
-    toast.success('Reminder created!');
+    try {
+      const { reminder } = await remindersApi.create({ title, time, recurrence });
+      setReminders(prev => [...prev, reminder]);
+      setTitle(''); setTime(''); setRecurrence('once'); setShowForm(false);
+      toast.success('Reminder created!');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create reminder');
+    }
+  };
+
+  const deleteReminder = async (id: string) => {
+    try {
+      await remindersApi.delete(id);
+      setReminders(prev => prev.filter(r => r.id !== id));
+      toast.success('Reminder deleted');
+    } catch { toast.error('Failed to delete reminder'); }
   };
 
   return (
@@ -72,7 +93,7 @@ export default function Reminders() {
               className={`w-11 h-6 rounded-full transition-colors relative ${rem.enabled ? 'bg-primary' : 'bg-muted'}`}>
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-card shadow transition-transform ${rem.enabled ? 'translate-x-5' : ''}`} />
             </button>
-            <button onClick={() => setReminders((prev) => prev.filter((r) => r.id !== rem.id))}
+            <button onClick={() => deleteReminder(rem.id)}
               className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition">
               <Trash2 className="h-4 w-4" />
             </button>

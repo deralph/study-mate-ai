@@ -1,22 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Star, Bookmark, BookmarkCheck, ExternalLink, Search, Video, FileText, File } from 'lucide-react';
-import { mockResources, type Resource } from '@/lib/mock-data';
+import { resourcesApi, type ApiResource } from '@/lib/api';
+import { toast } from 'sonner';
 
-const typeIcons = { Video: Video, Article: FileText, PDF: File };
+const typeIcons: Record<string, React.ElementType> = { Video, Article: FileText, PDF: File };
 
 export default function Resources() {
-  const [resources, setResources] = useState<Resource[]>(mockResources);
+  const [resources, setResources] = useState<ApiResource[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
 
-  const subjects = ['All', ...new Set(resources.map((r) => r.subject))];
+  useEffect(() => {
+    resourcesApi.list().then(d => setResources(d.resources)).catch(() => toast.error('Failed to load resources'));
+  }, []);
+
+  const subjects = ['All', ...new Set(resources.map((r) => r.subject).filter(Boolean))];
   const filtered = resources.filter(
     (r) => (filterSubject === 'All' || r.subject === filterSubject) && r.title.toLowerCase().includes(search.toLowerCase())
   );
 
-  const toggleBookmark = (id: string) => {
-    setResources((prev) => prev.map((r) => (r.id === id ? { ...r, bookmarked: !r.bookmarked } : r)));
+  const toggleBookmark = async (id: string) => {
+    try {
+      const { bookmarked } = await resourcesApi.toggleBookmark(id);
+      setResources(prev => prev.map(r => r.id === id ? { ...r, bookmarked } : r));
+    } catch { toast.error('Failed to update bookmark'); }
   };
 
   return (

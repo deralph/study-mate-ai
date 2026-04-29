@@ -1,24 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Sparkles, Copy, Check, Upload } from 'lucide-react';
+import { FileText, Sparkles, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
-
-const SAMPLE_SUMMARIES: Record<string, string> = {
-  default: `## Key Points
-
-1. **Main Concept**: The text covers fundamental principles of the subject with emphasis on practical application.
-
-2. **Important Definitions**: Key terms are highlighted and explained in context with real-world examples.
-
-3. **Core Arguments**: The material presents three main arguments supporting the thesis, backed by empirical evidence.
-
-4. **Conclusion**: The summary emphasizes understanding over memorization, encouraging critical thinking.
-
-### Quick Review
-- Focus on chapters 3-5 for exam preparation
-- Practice problems are essential for mastery
-- Connect concepts across different modules for deeper understanding`,
-};
+import { summarizerApi } from '@/lib/api';
 
 export default function NotesSummarizer() {
   const [inputText, setInputText] = useState('');
@@ -26,17 +10,19 @@ export default function NotesSummarizer() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handleSummarize = () => {
-    if (!inputText.trim()) {
-      toast.error('Please paste or type your notes first');
-      return;
-    }
+  const handleSummarize = async () => {
+    if (!inputText.trim()) { toast.error('Please paste or type your notes first'); return; }
+    if (inputText.trim().length < 50) { toast.error('Text is too short (min 50 characters)'); return; }
     setLoading(true);
-    setTimeout(() => {
-      setSummary(SAMPLE_SUMMARIES.default);
+    try {
+      const { summary: result } = await summarizerApi.summarizeText(inputText);
+      setSummary(result);
+      toast.success('Notes summarized!');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Summarization failed');
+    } finally {
       setLoading(false);
-      toast.success('Notes summarized successfully!');
-    }, 2000);
+    }
   };
 
   const handleCopy = () => {
@@ -83,9 +69,6 @@ export default function NotesSummarizer() {
                   <Sparkles className="h-4 w-4" />
                 )}
                 {loading ? 'Summarizing...' : 'Summarize'}
-              </button>
-              <button className="px-4 py-3 rounded-xl border border-border/50 text-sm font-medium text-muted-foreground flex items-center gap-2 hover:bg-muted/50 transition">
-                <Upload className="h-4 w-4" /> Upload File
               </button>
             </div>
           </div>

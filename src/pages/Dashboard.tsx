@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { Flame, Clock, BookOpen, Trophy, Upload, Play, MessageSquare, BarChart3, Wifi, WifiOff, Smartphone, Monitor, Zap, ChevronRight } from 'lucide-react';
-import { mockMaterials } from '@/lib/mock-data';
 import { useAuth } from '@/lib/auth-context';
 import { Link } from 'react-router-dom';
+import { progressApi, materialsApi, type ApiMaterial } from '@/lib/api';
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -18,22 +19,26 @@ const quickActions = [
   { label: 'View Progress', icon: BarChart3, to: '/progress', color: 'gradient-hero' },
 ];
 
-const recentActivity = [
-  { text: 'Completed "Data Structures Basics" quiz', time: '2 hours ago', type: 'quiz' },
-  { text: 'Uploaded "Operating Systems Notes"', time: '5 hours ago', type: 'upload' },
-  { text: 'Studied for 45 minutes', time: 'Yesterday', type: 'study' },
-  { text: 'AI generated summary for Calculus II', time: 'Yesterday', type: 'ai' },
-];
-
 export default function Dashboard() {
   const { user } = useAuth();
   const isOnline = navigator.onLine;
+  const [stats, setStats] = useState({ studyHours: '0', materialCount: 0, quizCount: 0, level: user?.level ?? 1 });
+  const [recentActivity, setRecentActivity] = useState<{ type: string; text: string; time: string }[]>([]);
+  const [recentMaterials, setRecentMaterials] = useState<ApiMaterial[]>([]);
+
+  useEffect(() => {
+    progressApi.getStats().then(d => {
+      setStats({ studyHours: d.stats.studyHours, materialCount: d.stats.materialCount, quizCount: d.stats.quizCount, level: d.stats.level });
+      setRecentActivity(d.recentActivity.slice(0, 4));
+    }).catch(() => {});
+    materialsApi.list().then(d => setRecentMaterials(d.materials.slice(0, 4))).catch(() => {});
+  }, []);
 
   const statsCards = [
-    { label: 'Study Hours', value: '48.5', icon: Clock, color: 'bg-primary/10 text-primary' },
-    { label: 'Materials', value: '12', icon: BookOpen, color: 'bg-secondary/10 text-secondary' },
-    { label: 'Quizzes Done', value: '8', icon: Trophy, color: 'bg-accent/10 text-accent' },
-    { label: 'Level', value: `${user?.level ?? 1}`, icon: Zap, color: 'bg-primary/10 text-primary' },
+    { label: 'Study Hours', value: stats.studyHours, icon: Clock, color: 'bg-primary/10 text-primary' },
+    { label: 'Materials', value: String(stats.materialCount), icon: BookOpen, color: 'bg-secondary/10 text-secondary' },
+    { label: 'Quizzes Done', value: String(stats.quizCount), icon: Trophy, color: 'bg-accent/10 text-accent' },
+    { label: 'Level', value: String(stats.level), icon: Zap, color: 'bg-primary/10 text-primary' },
   ];
 
   return (
@@ -112,7 +117,9 @@ export default function Dashboard() {
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3">Recent Activity</h2>
         <div className="bg-card/80 backdrop-blur-sm rounded-xl shadow-card border border-border/50 divide-y divide-border/50">
-          {recentActivity.map((item, i) => (
+          {recentActivity.length === 0 ? (
+            <p className="p-4 text-sm text-muted-foreground">No activity yet. Start studying!</p>
+          ) : recentActivity.map((item, i) => (
             <div key={i} className="p-4 flex items-center justify-between">
               <p className="text-sm text-foreground">{item.text}</p>
               <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">{item.time}</span>
@@ -129,22 +136,26 @@ export default function Dashboard() {
             View All <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {mockMaterials.slice(0, 4).map((mat) => (
-            <div key={mat.id} className="bg-card/80 backdrop-blur-sm rounded-xl p-4 shadow-card border border-border/50 flex items-start gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
-                {mat.fileType}
+        {recentMaterials.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No materials uploaded yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {recentMaterials.map((mat) => (
+              <div key={mat.id} className="bg-card/80 backdrop-blur-sm rounded-xl p-4 shadow-card border border-border/50 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold uppercase">
+                  {mat.file_type}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{mat.title}</p>
+                  <p className="text-xs text-muted-foreground">{mat.subject} · {mat.file_size}</p>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${mat.status === 'ready' ? 'bg-secondary/10 text-secondary' : 'bg-accent/10 text-accent'}`}>
+                  {mat.status}
+                </span>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{mat.title}</p>
-                <p className="text-xs text-muted-foreground">{mat.subject} · {mat.size}</p>
-              </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${mat.status === 'ready' ? 'bg-secondary/10 text-secondary' : 'bg-accent/10 text-accent'}`}>
-                {mat.status}
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

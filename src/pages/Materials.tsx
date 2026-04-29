@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Search, Filter, FileText, Trash2, Play, X, CloudUpload } from 'lucide-react';
-import { mockMaterials, type Material } from '@/lib/mock-data';
+import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { materialsApi, type ApiMaterial } from '@/lib/api';
 
 const fileTypeColors: Record<string, string> = {
   pdf: 'bg-destructive/10 text-destructive',
@@ -11,18 +13,60 @@ const fileTypeColors: Record<string, string> = {
 };
 
 export default function Materials() {
-  const [materials, setMaterials] = useState<Material[]>(mockMaterials);
+  const [materials, setMaterials] = useState<ApiMaterial[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
   const [showUpload, setShowUpload] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadSubject, setUploadSubject] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
-  const subjects = ['All', ...new Set(materials.map((m) => m.subject))];
+  useEffect(() => {
+    materialsApi.list().then(d => setMaterials(d.materials)).catch(() => toast.error('Failed to load materials'));
+  }, []);
+
+  const subjects = ['All', ...new Set(materials.map((m) => m.subject).filter(Boolean))];
   const filtered = materials.filter(
-    (m) =>
-      (filterSubject === 'All' || m.subject === filterSubject) &&
-      m.title.toLowerCase().includes(search.toLowerCase())
+    (m) => (filterSubject === 'All' || m.subject === filterSubject) && m.title.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    setUploadTitle(file.name.replace(/\.[^.]+$/, ''));
+    setShowUpload(true);
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) { toast.error('Please select a file'); return; }
+    setUploading(true);
+    try {
+      const { material } = await materialsApi.upload(selectedFile, uploadTitle || selectedFile.name, uploadSubject);
+      setMaterials(prev => [material, ...prev]);
+      toast.success('Material uploaded! Processing…');
+      setShowUpload(false);
+      setSelectedFile(null);
+      setUploadTitle('');
+      setUploadSubject('');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await materialsApi.delete(id);
+      setMaterials(prev => prev.filter(m => m.id !== id));
+      toast.success('Material deleted');
+    } catch {
+      toast.error('Failed to delete material');
+    }
+  };
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
@@ -37,15 +81,31 @@ export default function Materials() {
       {/* Upload Area */}
       {showUpload && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className={`border-2 border-dashed rounded-2xl p-8 text-center transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-border'}`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); }}>
-          <CloudUpload className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-          <p className="text-foreground font-medium">Drag & drop files here</p>
-          <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, Images — Max 10MB</p>
-          <button className="mt-4 px-6 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition">
-            Browse Files
+          className="border-2 border-dashed rounded-2xl p-6 space-y-4 border-border">
+          <div
+            className={`text-center py-6 rounded-xl transition-colors ${dragOver ? 'bg-primary/5 border-primary' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}>
+            <CloudUpload className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
+            <p className="text-foreground font-medium">{selectedFile ? selectedFile.name : 'Drag & drop or browse'}</p>
+            <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, Images — Max 10MB</p>
+            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
+            <button type="button" onClick={() => fileInputRef.current?.click()}
+              className="mt-3 px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition">
+              Browse Files
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <input type="text" placeholder="Title (optional)" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+            <input type="text" placeholder="Subject (optional)" value={uploadSubject} onChange={e => setUploadSubject(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+          </div>
+          <button onClick={handleUpload} disabled={!selectedFile || uploading}
+            className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50">
+            {uploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : <><Upload className="h-4 w-4" /> Upload Material</>}
           </button>
         </motion.div>
       )}
@@ -73,8 +133,8 @@ export default function Materials() {
           <motion.div key={mat.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
             className="bg-card rounded-xl p-4 shadow-card space-y-3">
             <div className="flex items-start gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold uppercase ${fileTypeColors[mat.fileType] || 'bg-muted text-muted-foreground'}`}>
-                {mat.fileType}
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold uppercase ${fileTypeColors[mat.file_type] || 'bg-muted text-muted-foreground'}`}>
+                {mat.file_type}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{mat.title}</p>
@@ -82,19 +142,20 @@ export default function Materials() {
               </div>
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{mat.uploadDate}</span>
-              <span>{mat.size}</span>
+              <span>{mat.upload_date}</span>
+              <span>{mat.file_size}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className={`text-xs px-2 py-1 rounded-full ${mat.status === 'ready' ? 'bg-secondary/10 text-secondary' : mat.status === 'processing' ? 'bg-accent/10 text-accent' : 'bg-destructive/10 text-destructive'}`}>
                 {mat.status === 'processing' ? '⏳ Processing' : mat.status === 'ready' ? '✓ Ready' : '✗ Error'}
               </span>
               <div className="flex gap-2">
-                <button className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground" title="Generate Quiz">
+                <button onClick={() => navigate('/quizzes')}
+                  className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground" title="Generate Quiz">
                   <Play className="h-4 w-4" />
                 </button>
                 <button className="p-1.5 rounded-lg hover:bg-destructive/10 transition text-muted-foreground hover:text-destructive" title="Delete"
-                  onClick={() => setMaterials((prev) => prev.filter((m) => m.id !== mat.id))}>
+                  onClick={() => handleDelete(mat.id)}>
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
@@ -107,7 +168,7 @@ export default function Materials() {
         <div className="text-center py-16">
           <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
           <p className="text-foreground font-medium">No materials found</p>
-          <p className="text-sm text-muted-foreground mt-1">Try adjusting your search or filters</p>
+          <p className="text-sm text-muted-foreground mt-1">Upload your first study material to get started</p>
         </div>
       )}
     </div>

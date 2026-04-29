@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CalendarDays, BookOpen, Clock, CheckCircle, Sparkles, Target } from 'lucide-react';
+import { CalendarDays, BookOpen, Clock, CheckCircle, Sparkles, Target, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { studyPlanApi } from '@/lib/api';
 
 interface DayPlan {
   day: number;
@@ -9,44 +10,6 @@ interface DayPlan {
   topics: string[];
   hours: number;
   type: 'study' | 'revision' | 'practice' | 'rest';
-}
-
-const SUBJECTS_POOL = [
-  'Data Structures & Algorithms', 'Operating Systems', 'Database Management',
-  'Computer Networks', 'Software Engineering', 'Calculus II',
-  'Digital Electronics', 'Discrete Mathematics', 'Statistics',
-];
-
-function generatePlan(examDate: string, subject: string): DayPlan[] {
-  const today = new Date();
-  const exam = new Date(examDate);
-  const totalDays = Math.max(1, Math.ceil((exam.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
-  const days = Math.min(totalDays, 30);
-  const plan: DayPlan[] = [];
-
-  for (let i = 0; i < days; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + i);
-    const dayOfWeek = date.getDay();
-    const isRest = dayOfWeek === 0;
-    const isRevision = i > 0 && i % 5 === 0;
-    const isPractice = i > 0 && i % 3 === 0;
-
-    const topicIndex = i % SUBJECTS_POOL.length;
-    const topics = isRest ? ['Rest & Light Review'] :
-      isRevision ? [`Revision: ${subject || SUBJECTS_POOL[topicIndex]}`, 'Practice Questions'] :
-      isPractice ? [`Practice: ${subject || SUBJECTS_POOL[topicIndex]}`, 'Solve Past Questions'] :
-      [`Study: ${subject || SUBJECTS_POOL[topicIndex]}`, `Read Chapter ${(i % 8) + 1}`];
-
-    plan.push({
-      day: i + 1,
-      date: date.toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric' }),
-      topics,
-      hours: isRest ? 1 : isRevision ? 3 : 2.5,
-      type: isRest ? 'rest' : isRevision ? 'revision' : isPractice ? 'practice' : 'study',
-    });
-  }
-  return plan;
 }
 
 const typeStyles = {
@@ -65,20 +28,22 @@ export default function StudyPlan() {
   const [subject, setSubject] = useState('');
   const [plan, setPlan] = useState<DayPlan[]>([]);
   const [generated, setGenerated] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleGenerate = () => {
-    if (!examDate) {
-      toast.error('Please select an exam date');
-      return;
+  const handleGenerate = async () => {
+    if (!examDate) { toast.error('Please select an exam date'); return; }
+    if (new Date(examDate) <= new Date()) { toast.error('Exam date must be in the future'); return; }
+    setLoading(true);
+    try {
+      const { plan: result } = await studyPlanApi.generate(examDate, subject);
+      setPlan(result.plan as DayPlan[]);
+      setGenerated(true);
+      toast.success(`AI study plan generated! ${result.plan.length} days planned`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate plan');
+    } finally {
+      setLoading(false);
     }
-    if (new Date(examDate) <= new Date()) {
-      toast.error('Exam date must be in the future');
-      return;
-    }
-    const newPlan = generatePlan(examDate, subject);
-    setPlan(newPlan);
-    setGenerated(true);
-    toast.success(`Study plan generated! ${newPlan.length} days planned`);
   };
 
   return (
@@ -106,16 +71,13 @@ export default function StudyPlan() {
             <label className="text-xs text-muted-foreground flex items-center gap-1">
               <BookOpen className="h-3 w-3" /> Subject (optional)
             </label>
-            <select value={subject} onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring appearance-none">
-              <option value="">All subjects</option>
-              {SUBJECTS_POOL.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Data Structures, Calculus"
+              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
         </div>
-        <button onClick={handleGenerate}
-          className="w-full sm:w-auto px-6 py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated">
-          <Sparkles className="h-4 w-4" /> Generate Study Plan
+        <button onClick={handleGenerate} disabled={loading}
+          className="w-full sm:w-auto px-6 py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated disabled:opacity-60">
+          {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating with AI…</> : <><Sparkles className="h-4 w-4" /> Generate Study Plan</>}
         </button>
       </motion.div>
 

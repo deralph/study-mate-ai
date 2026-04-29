@@ -24,32 +24,38 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [remember, setRemember] = useState(false);
   const navigate = useNavigate();
+  const [submitting, setSubmitting] = useState(false);
   const { login, signup } = useAuth();
 
   const passwordStrength = password.length === 0 ? 0 : password.length < 6 ? 1 : password.length < 10 ? 2 : 3;
   const strengthLabels = ['', 'Weak', 'Fair', 'Strong'];
   const strengthColors = ['', 'bg-destructive', 'bg-accent', 'bg-secondary'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRegister) {
-      if (!department || !year) {
-        toast.error('Please fill all fields');
-        return;
+    setSubmitting(true);
+    try {
+      if (isRegister) {
+        if (!department || !year) { toast.error('Please fill all fields'); return; }
+        await signup({
+          name,
+          email: email.includes('@') ? email : `${email}@aaua.edu.ng`,
+          password,
+          department,
+          year,
+          university: 'Adekunle Ajasin University (AAUA)',
+        });
+        toast.success('Account created! Welcome to Study Mate AI 🎉');
+      } else {
+        await login(email, password);
+        toast.success('Welcome back!');
       }
-      signup({
-        name,
-        email: email.includes('@') ? email : `${email}@aaua.edu.ng`,
-        department,
-        year,
-        university: 'Adekunle Ajasin University (AAUA)',
-      });
-      toast.success('Account created! Welcome to Study Mate AI 🎉');
-    } else {
-      login(email, password);
-      toast.success('Welcome back!');
+      navigate('/');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setSubmitting(false);
     }
-    navigate('/');
   };
 
   const inputClass = "w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring backdrop-blur-sm transition-all";
@@ -174,8 +180,8 @@ export default function Login() {
             </div>
           )}
 
-          <button type="submit" className="w-full py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated">
-            {isRegister ? 'Create Account' : 'Sign In'} <ArrowRight className="h-4 w-4" />
+          <button type="submit" disabled={submitting} className="w-full py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated disabled:opacity-60 disabled:cursor-not-allowed">
+            {submitting ? 'Please wait…' : isRegister ? 'Create Account' : 'Sign In'} {!submitting && <ArrowRight className="h-4 w-4" />}
           </button>
 
           <div className="relative my-4">
