@@ -267,5 +267,7 @@ export const summarizerApi = {
 export const recommendationsApi = {
   get: () => get<{ recommendations: ApiRecommendation[] }>('/recommendations'),
 
+  generate: () => post<{ recommendations: ApiRecommendation[] }>('/recommendations/generate'),
+
   markComplete: (id: string) => patch<{ message: string }>(`/recommendations/${id}/complete`),
 };
