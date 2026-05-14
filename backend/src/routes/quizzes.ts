@@ -36,7 +36,6 @@ quizzesRouter.post('/generate', async (req: AuthedRequest, res) => {
   if (!materialId) return res.status(400).json({ error: 'materialId required' });
   const material: any = db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(materialId, req.userId!);
   if (!material) return res.status(404).json({ error: 'Material not found' });
-  if (!hasAi()) return res.status(503).json({ error: 'AI not configured. Add GEMINI_API_KEY in backend/.env' });
 
   const count = Math.max(3, Math.min(20, Number(questionCount) || 10));
   const prompt = `Based on the following study material, generate exactly ${count} quiz questions. Mix multiple-choice, true-false, and short-answer types.
@@ -49,11 +48,15 @@ MATERIAL (${material.title}):
 ${(material.text_content || '').slice(0, 12000)}`;
 
   let questions: GeneratedQuestion[];
-  try {
-    questions = await aiJson<GeneratedQuestion[]>(prompt);
-    if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions returned');
-  } catch (e: any) {
-    return res.status(500).json({ error: 'Failed to generate quiz: ' + e.message });
+  if (hasAi() && material.text_content) {
+    try {
+      questions = await aiJson<GeneratedQuestion[]>(prompt);
+      if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions returned');
+    } catch (e: any) {
+      return res.status(500).json({ error: 'Failed to generate quiz: ' + e.message });
+    }
+  } else {
+    questions = fallbackQuestions(material.title, material.subject, count);
   }
 
   const quizId = uid();
@@ -108,6 +111,7 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
   db.prepare('INSERT INTO quiz_attempts (id, quiz_id, user_id, score, total, percentage, answers_json) VALUES (?,?,?,?,?,?,?)')
     .run(attemptId, q.id, req.userId!, score, total, percentage, JSON.stringify(answers));
   db.prepare('UPDATE users SET points = points + ? WHERE id=?').run(pointsEarned, req.userId!);
+  db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
   db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type, score) VALUES (?,?,?,?,?,?)')
     .run(uid(), req.userId!, q.subject, q.duration, 'quiz', percentage);
 
@@ -116,6 +120,20 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
     questions: getQuestions(q.id, true),
   });
 });
+
+function fallbackQuestions(title: string, subject: string, count: number): GeneratedQuestion[] {
+  const topics = [title, `${subject} key concepts`, `${subject} definitions`, `${subject} applications`, `${subject} revision`];
+  return Array.from({ length: count }, (_, i) => {
+    const topic = topics[i % topics.length];
+    if (i % 3 === 1) {
+      return { question: `True or False: Reviewing ${topic} with past questions improves exam preparation.`, type: 'true-false', correctAnswer: 'True', explanation: 'Active recall and practice questions improve retention.' };
+    }
+    if (i % 3 === 2) {
+      return { question: `In one sentence, state why ${topic} is important in ${subject}.`, type: 'short-answer', correctAnswer: subject, explanation: `A good answer should connect the topic back to ${subject}.` };
+    }
+    return { question: `Which activity best helps you master ${topic}?`, type: 'multiple-choice', options: ['Skimming once', 'Active recall with practice', 'Ignoring weak areas', 'Only reading headings'], correctAnswer: 'Active recall with practice', explanation: 'Active recall and practice reveal weak areas and strengthen memory.' };
+  });
+}
 
 quizzesRouter.get('/:id/attempts', (req: AuthedRequest, res) => {
   const rows: any[] = db.prepare('SELECT id, score, total, percentage, completed_at FROM quiz_attempts WHERE quiz_id=? AND user_id=? ORDER BY completed_at DESC')
