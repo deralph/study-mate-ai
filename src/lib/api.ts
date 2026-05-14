@@ -157,6 +157,15 @@ export const materialsApi = {
 
   fileUrl: (id: string) => `${BASE_URL}/materials/${id}/file`,
 
+  fileBlob: async (id: string) => {
+    const token = getToken();
+    const res = await fetch(`${BASE_URL}/materials/${id}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Failed to open material file');
+    return res.blob();
+  },
+
   upload: (file: File, title: string, subject: string) => {
     const form = new FormData();
     form.append('file', file);
