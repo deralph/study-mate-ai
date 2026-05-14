@@ -255,10 +255,10 @@ export const studyPlanApi = {
   list: () => get<{ plans: { id: string; exam_date: string; subject: string; created_at: string }[] }>('/study-plan'),
 
   get: (id: string) =>
-    get<{ plan: { id: string; exam_date: string; subject: string; plan: { day: number; date: string; topics: string[]; hours: number; type: string }[] } }>(`/study-plan/${id}`),
+    get<{ plan: { id: string; exam_date: string; subject: string; plan: { day: number; date: string; subject: string; focus: string; topics: string[]; hours: number; type: string }[] } }>(`/study-plan/${id}`),
 
   generate: (examDate: string, subject: string) =>
-    post<{ plan: { id: string; examDate: string; subject: string; plan: { day: number; date: string; topics: string[]; hours: number; type: string }[] } }>(
+    post<{ plan: { id: string; examDate: string; subject: string; plan: { day: number; date: string; subject: string; focus: string; topics: string[]; hours: number; type: string }[] } }>(
       '/study-plan/generate', { examDate, subject }
     ),
 };
