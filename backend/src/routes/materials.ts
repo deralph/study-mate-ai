@@ -50,6 +50,14 @@ materialsRouter.get('/', (req: AuthedRequest, res) => {
   res.json({ materials: rows.map(rowToApi) });
 });
 
+materialsRouter.get('/:id/file', (req: AuthedRequest, res) => {
+  const row: any = db.prepare('SELECT file_path, file_name, file_type FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: 'File missing on server' });
+  res.setHeader('Content-Disposition', `inline; filename="${String(row.file_name).replace(/"/g, '')}"`);
+  res.sendFile(row.file_path);
+});
+
 materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest, res) => {
   const file = req.file;
   const { title, subject } = req.body ?? {};
