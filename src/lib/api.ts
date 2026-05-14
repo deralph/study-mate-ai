@@ -61,6 +61,18 @@ export interface ApiMaterial {
   upload_date: string;
 }
 
+export interface ProgressStatsResponse {
+  stats: { studyHours: string; materialCount: number; quizCount: number; avgScore: number; studyStreak: number; level: number; points: number; completionRate: number; studyConsistency: number; improvement: number; hasAnyData: boolean };
+  studyBySubject: { subject: string; hours: number }[];
+  weeklyPerformance: { week: string; score: number }[];
+  subjectBreakdown: { subject: string; hours: number; avg_score: number; quiz_count: number }[];
+  radarData: { subject: string; score: number }[];
+  recentActivity: { type: string; text: string; time: string }[];
+  upcomingReminders: { title: string; time: string; recurrence: string }[];
+  latestMaterials: { title: string; subject: string; file_type: string; upload_date: string }[];
+  placeholders: { primarySubject: string; emptyChartsMessage: string };
+}
+
 export interface ApiChatMessage {
   id: string;
   role: 'user' | 'ai';
@@ -143,6 +155,8 @@ export const authApi = {
 export const materialsApi = {
   list: () => get<{ materials: ApiMaterial[] }>('/materials'),
 
+  fileUrl: (id: string) => `${BASE_URL}/materials/${id}/file`,
+
   upload: (file: File, title: string, subject: string) => {
     const form = new FormData();
     form.append('file', file);
@@ -194,15 +208,7 @@ export const quizzesApi = {
 
 // ─── Progress API ────────────────────────────────────────────────────────────
 export const progressApi = {
-  getStats: () =>
-    get<{
-      stats: { studyHours: string; materialCount: number; quizCount: number; avgScore: number; studyStreak: number; level: number; points: number };
-      studyBySubject: { subject: string; hours: number }[];
-      weeklyPerformance: { week: string; score: number }[];
-      subjectBreakdown: { subject: string; hours: number; avg_score: number; quiz_count: number }[];
-      radarData: { subject: string; score: number }[];
-      recentActivity: { type: string; text: string; time: string }[];
-    }>('/progress/stats'),
+  getStats: () => get<ProgressStatsResponse>('/progress/stats'),
 
   logSession: (subject: string, durationMinutes: number, activityType?: string) =>
     post<{ message: string }>('/progress/session', { subject, durationMinutes, activityType }),
@@ -224,6 +230,8 @@ export const remindersApi = {
 // ─── Resources API ───────────────────────────────────────────────────────────
 export const resourcesApi = {
   list: () => get<{ resources: ApiResource[] }>('/resources'),
+
+  generate: () => post<{ resources: ApiResource[] }>('/resources/generate'),
 
   create: (data: { title: string; type: string; subject: string; url: string; duration?: string; rating?: number }) =>
     post<{ resource: ApiResource }>('/resources', data),
