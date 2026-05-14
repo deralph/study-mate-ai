@@ -50,11 +50,19 @@ materialsRouter.get('/', (req: AuthedRequest, res) => {
   res.json({ materials: rows.map(rowToApi) });
 });
 
+materialsRouter.get('/:id/file', (req: AuthedRequest, res) => {
+  const row: any = db.prepare('SELECT file_path, file_name, file_type FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: 'File missing on server' });
+  res.setHeader('Content-Disposition', `inline; filename="${String(row.file_name).replace(/"/g, '')}"`);
+  res.sendFile(row.file_path);
+});
+
 materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest, res) => {
   const file = req.file;
   const { title, subject } = req.body ?? {};
   if (!file) return res.status(400).json({ error: 'No file uploaded' });
-  if (!title || !subject) return res.status(400).json({ error: 'Title and subject required' });
+  if (!title) return res.status(400).json({ error: 'Title required' });
 
   const id = uid();
   const ext = path.extname(file.originalname).toLowerCase().slice(1);
@@ -75,7 +83,7 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
 
   db.prepare(`INSERT INTO materials (id, user_id, title, subject, file_type, file_name, file_path, file_size, text_content, status)
               VALUES (?,?,?,?,?,?,?,?,?,'ready')`)
-    .run(id, req.userId!, title, subject, ext.toUpperCase(), file.originalname, file.path, fmtSize(file.size), textContent);
+    .run(id, req.userId!, title, subject || 'General Studies', ext.toUpperCase(), file.originalname, file.path, fmtSize(file.size), textContent);
 
   const row = db.prepare('SELECT * FROM materials WHERE id=?').get(id);
   res.json({ material: rowToApi(row) });

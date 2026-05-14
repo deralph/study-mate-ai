@@ -25,7 +25,8 @@ export default function Reminders() {
   };
 
   const addReminder = async () => {
-    if (!title.trim() || !time) return;
+    if (!title.trim()) { toast.error('Enter a reminder title'); return; }
+    if (!time) { toast.error('Select a reminder time'); return; }
     try {
       const { reminder } = await remindersApi.create({ title, time, recurrence });
       setReminders(prev => [...prev, reminder]);

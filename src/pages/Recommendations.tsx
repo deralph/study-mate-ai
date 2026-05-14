@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { Lightbulb, Clock, Zap, Play, Calendar, Check, Loader2 } from 'lucide-react';
-import { recommendationsApi, type ApiRecommendation } from '@/lib/api';
+import { useNavigate } from 'react-router-dom';
+import { progressApi, recommendationsApi, type ApiRecommendation } from '@/lib/api';
 import { toast } from 'sonner';
 
 const difficultyColors = { Easy: 'bg-secondary/10 text-secondary', Medium: 'bg-accent/10 text-accent', Hard: 'bg-destructive/10 text-destructive' };
@@ -10,6 +11,8 @@ const priorityColors = { high: 'border-destructive/40', medium: 'border-accent/4
 export default function Recommendations() {
   const [recommendations, setRecommendations] = useState<ApiRecommendation[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [startingId, setStartingId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     recommendationsApi.get().then(d => setRecommendations(d.recommendations)).catch(() => toast.error('Failed to load recommendations'));
@@ -34,6 +37,20 @@ export default function Recommendations() {
       setRecommendations(prev => prev.map(r => r.id === id ? { ...r, completed: true } : r));
       toast.success('Marked as completed!');
     } catch { toast.error('Failed to update'); }
+  };
+
+  const handleStart = async (rec: ApiRecommendation) => {
+    setStartingId(rec.id);
+    try {
+      const minutes = Math.max(10, Number(rec.estimated_time.match(/\d+/)?.[0]) || 20);
+      await progressApi.logSession(rec.subject, minutes, 'recommendation_start');
+      toast.success('Study session started and logged');
+      navigate('/materials');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start recommendation');
+    } finally {
+      setStartingId(null);
+    }
   };
 
   return (
@@ -74,8 +91,8 @@ export default function Recommendations() {
               <div className="flex gap-2">
                 {!rec.completed ? (
                   <>
-                    <button className="flex-1 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition">
-                      <Play className="h-4 w-4" /> Start Now
+                    <button onClick={() => handleStart(rec)} disabled={startingId === rec.id} className="flex-1 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-60">
+                      {startingId === rec.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start Now
                     </button>
                     <button onClick={() => handleComplete(rec.id)} className="flex-1 py-2 rounded-lg border border-border text-sm font-medium text-foreground flex items-center justify-center gap-2 hover:bg-muted transition">
                       <Check className="h-4 w-4" /> Mark Done

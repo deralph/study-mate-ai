@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Star, Bookmark, BookmarkCheck, ExternalLink, Search, Video, FileText, File } from 'lucide-react';
+import { Star, Bookmark, BookmarkCheck, ExternalLink, Search, Video, FileText, File, Sparkles, Loader2 } from 'lucide-react';
 import { resourcesApi, type ApiResource } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -10,6 +10,7 @@ export default function Resources() {
   const [resources, setResources] = useState<ApiResource[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     resourcesApi.list().then(d => setResources(d.resources)).catch(() => toast.error('Failed to load resources'));
@@ -27,9 +28,28 @@ export default function Resources() {
     } catch { toast.error('Failed to update bookmark'); }
   };
 
+  const generateResources = async () => {
+    setGenerating(true);
+    try {
+      const { resources: fresh } = await resourcesApi.generate();
+      setResources(fresh);
+      toast.success('Resources generated from your profile and materials');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate resources');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">Resources Hub</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-foreground">Resources Hub</h1>
+        <button onClick={generateResources} disabled={generating}
+          className="gradient-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition disabled:opacity-60">
+          {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating</> : <><Sparkles className="h-4 w-4" /> Generate</>}
+        </button>
+      </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -49,7 +69,7 @@ export default function Resources() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {filtered.map((res, i) => {
-          const Icon = typeIcons[res.type];
+          const Icon = typeIcons[res.type] || FileText;
           return (
             <motion.div key={res.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
               className="bg-card rounded-xl p-5 shadow-card space-y-3">
@@ -81,6 +101,14 @@ export default function Resources() {
           );
         })}
       </div>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-16">
+          <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+          <p className="text-foreground font-medium">No resources yet</p>
+          <p className="text-sm text-muted-foreground mt-1">Generate blogs, topics, and study links from your course and uploaded materials.</p>
+        </div>
+      )}
     </div>
   );
 }

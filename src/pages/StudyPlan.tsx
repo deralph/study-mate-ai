@@ -7,6 +7,8 @@ import { studyPlanApi } from '@/lib/api';
 interface DayPlan {
   day: number;
   date: string;
+  subject: string;
+  focus: string;
   topics: string[];
   hours: number;
   type: 'study' | 'revision' | 'practice' | 'rest';
@@ -27,6 +29,7 @@ export default function StudyPlan() {
   const [examDate, setExamDate] = useState('');
   const [subject, setSubject] = useState('');
   const [plan, setPlan] = useState<DayPlan[]>([]);
+  const [planSubject, setPlanSubject] = useState('');
   const [generated, setGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -37,6 +40,7 @@ export default function StudyPlan() {
     try {
       const { plan: result } = await studyPlanApi.generate(examDate, subject);
       setPlan(result.plan as DayPlan[]);
+      setPlanSubject(result.subject);
       setGenerated(true);
       toast.success(`AI study plan generated! ${result.plan.length} days planned`);
     } catch (err: unknown) {
@@ -84,6 +88,16 @@ export default function StudyPlan() {
       {/* Plan Output */}
       {generated && plan.length > 0 && (
         <div className="space-y-3">
+          <div className="bg-card rounded-xl p-4 shadow-card border border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Generated plan</p>
+              <h2 className="text-lg font-bold text-foreground">{planSubject || subject || 'Study'} until {examDate}</h2>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span>{plan.length} days</span>
+              <span>{plan.reduce((sum, day) => sum + Number(day.hours || 0), 0)} study hours</span>
+            </div>
+          </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-primary" /> Study</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-accent" /> Revision</span>
@@ -98,10 +112,12 @@ export default function StudyPlan() {
                 <p className="text-[10px] text-muted-foreground">{day.date}</p>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-medium">{typeLabels[day.type]}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{day.subject || planSubject}</span>
                   <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{day.hours}h</span>
                 </div>
+                <p className="text-sm font-semibold text-foreground mb-2">{day.focus || `${day.subject || planSubject} study session`}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {day.topics.map((topic, j) => (
                     <span key={j} className="text-xs px-2 py-1 rounded-full bg-background/80 text-foreground border border-border/50">{topic}</span>

@@ -74,5 +74,10 @@ recommendationsRouter.patch('/:id/complete', (req: AuthedRequest, res) => {
   if (!r) return res.status(404).json({ error: 'Not found' });
   db.prepare('UPDATE recommendations SET completed=1 WHERE id=?').run(req.params.id);
   db.prepare('UPDATE users SET points=points+10 WHERE id=?').run(req.userId!);
+  db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
+  const rec: any = db.prepare('SELECT subject, estimated_time FROM recommendations WHERE id=?').get(req.params.id);
+  const minutes = Math.max(10, Number(String(rec?.estimated_time || '').match(/\d+/)?.[0]) || 20);
+  db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
+    .run(uid(), req.userId!, rec?.subject || 'General', minutes, 'recommendation');
   res.json({ message: 'Marked complete' });
 });
