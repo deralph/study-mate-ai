@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2 } from 'lucide-react';
+import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { materialsApi, type ApiMaterial } from '@/lib/api';
@@ -22,8 +22,13 @@ export default function Materials() {
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadSubject, setUploadSubject] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [viewing, setViewing] = useState<(ApiMaterial & { text_content?: string }) | null>(null);
+  const [fileUrl, setFileUrl] = useState('');
+  const [opening, setOpening] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
 
   useEffect(() => {
     materialsApi.list().then(d => setMaterials(d.materials)).catch(() => toast.error('Failed to load materials'));
@@ -65,6 +70,20 @@ export default function Materials() {
       toast.success('Material deleted');
     } catch {
       toast.error('Failed to delete material');
+    }
+  };
+
+  const handleOpen = async (material: ApiMaterial) => {
+    setOpening(material.id);
+    try {
+      const [{ material: full }, blob] = await Promise.all([materialsApi.get(material.id), materialsApi.fileBlob(material.id)]);
+      if (fileUrl) URL.revokeObjectURL(fileUrl);
+      setFileUrl(URL.createObjectURL(blob));
+      setViewing(full);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to open material');
+    } finally {
+      setOpening(null);
     }
   };
 
