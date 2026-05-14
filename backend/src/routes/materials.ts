@@ -62,7 +62,7 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
   const file = req.file;
   const { title, subject } = req.body ?? {};
   if (!file) return res.status(400).json({ error: 'No file uploaded' });
-  if (!title || !subject) return res.status(400).json({ error: 'Title and subject required' });
+  if (!title) return res.status(400).json({ error: 'Title required' });
 
   const id = uid();
   const ext = path.extname(file.originalname).toLowerCase().slice(1);
@@ -83,7 +83,7 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
 
   db.prepare(`INSERT INTO materials (id, user_id, title, subject, file_type, file_name, file_path, file_size, text_content, status)
               VALUES (?,?,?,?,?,?,?,?,?,'ready')`)
-    .run(id, req.userId!, title, subject, ext.toUpperCase(), file.originalname, file.path, fmtSize(file.size), textContent);
+    .run(id, req.userId!, title, subject || 'General Studies', ext.toUpperCase(), file.originalname, file.path, fmtSize(file.size), textContent);
 
   const row = db.prepare('SELECT * FROM materials WHERE id=?').get(id);
   res.json({ material: rowToApi(row) });
