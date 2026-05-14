@@ -169,6 +169,10 @@ export default function Materials() {
                 {mat.status === 'processing' ? '⏳ Processing' : mat.status === 'ready' ? '✓ Ready' : '✗ Error'}
               </span>
               <div className="flex gap-2">
+                <button onClick={() => handleOpen(mat)} disabled={opening === mat.id}
+                  className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground disabled:opacity-50" title="Open Material">
+                  {opening === mat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                </button>
                 <button onClick={() => navigate('/quizzes')}
                   className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground" title="Generate Quiz">
                   <Play className="h-4 w-4" />
@@ -188,6 +192,37 @@ export default function Materials() {
           <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
           <p className="text-foreground font-medium">No materials found</p>
           <p className="text-sm text-muted-foreground mt-1">Upload your first study material to get started</p>
+        </div>
+      )}
+
+      {viewing && (
+        <div className="fixed inset-0 z-50 bg-foreground/60 backdrop-blur-sm p-3 lg:p-8 flex items-center justify-center">
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="bg-card rounded-xl shadow-float border border-border w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-border flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-foreground truncate">{viewing.title}</h2>
+                <p className="text-xs text-muted-foreground">{viewing.subject} · {viewing.file_type} · {viewing.file_size}</p>
+              </div>
+              <button onClick={() => setViewing(null)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition" title="Close">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-background overflow-auto">
+              {['PNG', 'JPG', 'JPEG'].includes(viewing.file_type) ? (
+                <img src={fileUrl} alt={viewing.title} className="max-w-full mx-auto" />
+              ) : viewing.file_type === 'PDF' ? (
+                <iframe src={fileUrl} title={viewing.title} className="w-full h-full" />
+              ) : viewing.text_content ? (
+                <pre className="whitespace-pre-wrap text-sm leading-6 p-5 text-foreground font-sans">{viewing.text_content}</pre>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6">
+                  <FileText className="h-14 w-14 text-muted-foreground/30 mb-3" />
+                  <p className="text-foreground font-medium">Preview not available for this file type</p>
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium">Open original file</a>
+                </div>
+              )}
+            </div>
+          </motion.div>
         </div>
       )}
     </div>
