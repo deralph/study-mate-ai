@@ -1,13 +1,98 @@
-import Database from 'better-sqlite3';
+// SQLite via sql.js (pure-JS WASM build).
+// We wrap sql.js with a tiny better-sqlite3-compatible API so the rest of the
+// codebase keeps using `db.prepare(sql).run/get/all(...args)` unchanged.
+//
+// Persistence: the database lives in memory; after every mutating call we
+// serialize the DB to `data.db` on disk. On startup we load that file if it
+// exists. This is fine for a small student-project workload.
+
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, '..', 'data.db');
 
-export const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const SQL = await initSqlJs();
+
+const raw: SqlJsDatabase = fs.existsSync(dbPath)
+  ? new SQL.Database(fs.readFileSync(dbPath))
+  : new SQL.Database();
+
+// ─── Persistence ─────────────────────────────────────────────────────────────
+let saveTimer: NodeJS.Timeout | null = null;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      const data = raw.export();
+      fs.writeFileSync(dbPath, Buffer.from(data));
+    } catch (e) {
+      console.error('Failed to persist sql.js database:', e);
+    }
+  }, 50);
+}
+
+// ─── better-sqlite3-compatible wrapper ──────────────────────────────────────
+function flatten(args: any[]): any[] {
+  if (args.length === 1 && Array.isArray(args[0])) return args[0];
+  return args;
+}
+
+class Statement {
+  constructor(private sql: string) {}
+
+  run(...args: any[]) {
+    const stmt = raw.prepare(this.sql);
+    try {
+      stmt.run(flatten(args));
+    } finally {
+      stmt.free();
+    }
+    scheduleSave();
+    return { changes: raw.getRowsModified() };
+  }
+
+  get(...args: any[]) {
+    const stmt = raw.prepare(this.sql);
+    try {
+      stmt.bind(flatten(args));
+      return stmt.step() ? stmt.getAsObject() : undefined;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  all(...args: any[]) {
+    const stmt = raw.prepare(this.sql);
+    const rows: any[] = [];
+    try {
+      stmt.bind(flatten(args));
+      while (stmt.step()) rows.push(stmt.getAsObject());
+    } finally {
+      stmt.free();
+    }
+    return rows;
+  }
+}
+
+export const db = {
+  prepare(sql: string) {
+    return new Statement(sql);
+  },
+  exec(sql: string) {
+    raw.exec(sql);
+    scheduleSave();
+  },
+  pragma(_p: string) {
+    // no-op: sql.js doesn't support WAL; foreign_keys handled below
+  },
+};
+
+// Enable FK enforcement (PRAGMA via run is supported in sql.js)
+raw.run('PRAGMA foreign_keys = ON');
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 db.exec(`
@@ -149,3 +234,13 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
+
+// Flush on shutdown
+function flushSync() {
+  try {
+    fs.writeFileSync(dbPath, Buffer.from(raw.export()));
+  } catch {}
+}
+process.on('SIGINT', () => { flushSync(); process.exit(0); });
+process.on('SIGTERM', () => { flushSync(); process.exit(0); });
+process.on('exit', flushSync);
