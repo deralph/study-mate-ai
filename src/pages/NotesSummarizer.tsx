@@ -19,6 +19,7 @@ export default function NotesSummarizer() {
       setSummary(result);
       toast.success('Notes summarized!');
     } catch (err: unknown) {
+      console.log(err instanceof Error ? err.message : 'Summarization failed');
       toast.error(err instanceof Error ? err.message : 'Summarization failed');
     } finally {
       setLoading(false);

@@ -235,6 +235,9 @@ CREATE TABLE IF NOT EXISTS study_sessions (
 );
 `);
 
+// ─── Migrations ──────────────────────────────────────────────────────────────
+try { db.exec('ALTER TABLE recommendations ADD COLUMN url TEXT'); } catch {}
+
 // Flush on shutdown
 function flushSync() {
   try {

@@ -33,6 +33,7 @@ export default function Quizzes() {
       setShowGenerate(false);
       setSelectedMaterial('');
     } catch (err: unknown) {
+      console.log(err instanceof Error ? err.message : 'Generation failed');
       toast.error(err instanceof Error ? err.message : 'Generation failed');
     } finally {
       setGenerating(false);

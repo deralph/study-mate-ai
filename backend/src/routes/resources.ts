@@ -40,12 +40,19 @@ resourcesRouter.post('/generate', async (req: AuthedRequest, res) => {
   let resources: ResourceSeed[];
   if (hasAi()) {
     try {
-      resources = await aiJson<ResourceSeed[]>(`Create 8 helpful study resources for this Nigerian university student.
+      resources = await aiJson<ResourceSeed[]>(`Create 10 high-quality, diverse study resources for this Nigerian university student.
 Profile: ${JSON.stringify(user)}
-Uploaded materials: ${JSON.stringify(materials)}
-Return STRICT JSON array only:
-[{"title":"clear resource/blog/topic title","type":"Article|Video|PDF|Blog","subject":"course/subject","duration":"10 min","rating":4.7,"url":"https://www.google.com/search?q=encoded+search+query"}]
-Use Google, YouTube, or scholar-style search URLs that point to the topic; do not invent fake domains.`);
+Uploaded materials/subjects: ${JSON.stringify(materials)}
+Return STRICT JSON array only (no markdown, no extra text):
+[{"title":"descriptive resource title","type":"Video|Article|PDF","subject":"exact course name","duration":"15 min","rating":4.8,"url":"REAL_URL"}]
+URL rules (must be real, working URLs):
+- YouTube videos: https://www.youtube.com/results?search_query=ENCODED_QUERY
+- Wikipedia articles: https://en.wikipedia.org/wiki/TOPIC_NAME
+- Khan Academy: https://www.khanacademy.org/search?referer=%2F&page_search_query=ENCODED_QUERY
+- Google Scholar: https://scholar.google.com/scholar?q=ENCODED_QUERY
+- Google search: https://www.google.com/search?q=ENCODED_QUERY
+Mix 4 YouTube videos, 3 Wikipedia/Google articles, and 3 Khan Academy/Scholar resources.
+Each resource must directly relate to the student's uploaded subjects or department.`);
       if (!Array.isArray(resources) || resources.length === 0) throw new Error('empty');
     } catch {
       resources = defaultResources(subjects, user?.department);
@@ -68,8 +75,9 @@ Use Google, YouTube, or scholar-style search URLs that point to the topic; do no
 function defaultResources(subjects: string[], department?: string): ResourceSeed[] {
   const base = subjects.length ? subjects : [department || 'General Studies', 'Academic Writing', 'Exam Preparation'];
   return base.slice(0, 4).flatMap((subject) => ([
-    { title: `${subject} fundamentals study guide`, type: 'Article', subject, duration: '12 min', rating: 4.7 },
-    { title: `${subject} past questions and revision topics`, type: 'Blog', subject, duration: '18 min', rating: 4.6 },
+    { title: `${subject} – Full Lecture (YouTube)`, type: 'Video', subject, duration: '20 min', rating: 4.8, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(subject + ' university lecture')}` },
+    { title: `${subject} – Wikipedia Overview`, type: 'Article', subject, duration: '10 min', rating: 4.6, url: `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(subject)}` },
+    { title: `${subject} – Khan Academy`, type: 'Article', subject, duration: '15 min', rating: 4.7, url: `https://www.khanacademy.org/search?referer=%2F&page_search_query=${encodeURIComponent(subject)}` },
   ]));
 }
 

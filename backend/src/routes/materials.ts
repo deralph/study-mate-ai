@@ -76,6 +76,10 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
       textContent = data.text.slice(0, 50_000);
     } else if (ext === 'txt' || ext === 'md') {
       textContent = fs.readFileSync(file.path, 'utf8').slice(0, 50_000);
+    } else if (ext === 'docx' || ext === 'doc') {
+      const mammoth = (await import('mammoth')).default;
+      const result = await mammoth.extractRawText({ path: file.path });
+      textContent = result.value.slice(0, 50_000);
     }
   } catch (e) {
     console.error('Text extraction failed:', e);
