@@ -64,7 +64,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(err.status || 500).json({ error: err.message || 'Internal error' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Study Mate backend listening on port ${PORT}`);
   console.log(`   API base: /api  ·  Health: /api/health`);
   if (isProd) console.log(`   CORS allowed origin: ${FRONTEND_URL}`);
