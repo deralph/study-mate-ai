@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X, Sparkles, MessageCircle, BookOpen, HelpCircle, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { materialsApi, summarizerApi, chatApi, type ApiMaterial } from '@/lib/api';
+import { materialsApi, summarizerApi, chatApi, quizzesApi, type ApiMaterial } from '@/lib/api';
 
 const fileTypeColors: Record<string, string> = {
   pdf: 'bg-destructive/10 text-destructive',
@@ -34,6 +34,7 @@ export default function Materials() {
   const [viewing, setViewing] = useState<(ApiMaterial & { text_content?: string }) | null>(null);
   const [fileUrl, setFileUrl] = useState('');
   const [opening, setOpening] = useState<string | null>(null);
+  const [generatingQuiz, setGeneratingQuiz] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -112,6 +113,18 @@ export default function Materials() {
       toast.error(err instanceof Error ? err.message : 'Failed to open material');
     } finally {
       setOpening(null);
+    }
+  };
+
+  const handleGenerateQuiz = async (mat: ApiMaterial) => {
+    setGeneratingQuiz(mat.id);
+    try {
+      const { quiz } = await quizzesApi.generate(mat.id, 10);
+      navigate('/quizzes', { state: { startQuizId: quiz.id } });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate quiz');
+    } finally {
+      setGeneratingQuiz(null);
     }
   };
 
@@ -236,9 +249,9 @@ export default function Materials() {
                   className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground disabled:opacity-50" title="Open Material">
                   {opening === mat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                 </button>
-                <button onClick={() => navigate('/quizzes')}
-                  className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground" title="Generate Quiz">
-                  <Play className="h-4 w-4" />
+                <button onClick={() => handleGenerateQuiz(mat)} disabled={generatingQuiz === mat.id}
+                  className="p-1.5 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground disabled:opacity-50" title="Generate Quiz from Material">
+                  {generatingQuiz === mat.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 </button>
                 <button className="p-1.5 rounded-lg hover:bg-destructive/10 transition text-muted-foreground hover:text-destructive" title="Delete"
                   onClick={() => handleDelete(mat.id)}>

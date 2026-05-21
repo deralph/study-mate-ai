@@ -15,14 +15,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
 
-  if (res.status === 401 || res.status === 403) {
+  const data = await res.json();
+  if ((res.status === 401 || res.status === 403) && token) {
     localStorage.removeItem('studymate_token');
     localStorage.removeItem('studymate_user');
     window.location.href = '/login';
     throw new Error('Session expired');
   }
-
-  const data = await res.json();
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data as T;
 }

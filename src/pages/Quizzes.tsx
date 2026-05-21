@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Play, Clock, CheckCircle, ArrowLeft, ArrowRight, Timer, Loader2, Plus, BookOpen } from 'lucide-react';
 import { quizzesApi, materialsApi, type ApiQuiz, type ApiQuestion, type ApiMaterial } from '@/lib/api';
 import { toast } from 'sonner';
+import { useLocation } from 'react-router-dom';
 
 export default function Quizzes() {
   const [quizzes, setQuizzes] = useState<ApiQuiz[]>([]);
@@ -17,10 +18,16 @@ export default function Quizzes() {
   const [generating, setGenerating] = useState(false);
   const [showGenerate, setShowGenerate] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState('');
+  const location = useLocation();
 
   useEffect(() => {
     quizzesApi.list().then(d => setQuizzes(d.quizzes)).catch(() => {});
     materialsApi.list().then(d => setMaterials(d.materials.filter(m => m.status === 'ready'))).catch(() => {});
+    const startId = (location.state as any)?.startQuizId;
+    if (startId) {
+      startQuiz(startId);
+      window.history.replaceState({}, '');
+    }
   }, []);
 
   const handleGenerate = async () => {

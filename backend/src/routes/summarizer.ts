@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, type AuthedRequest } from '../auth-middleware.js';
-import { aiText, hasAi } from '../ai.js';
+import { aiText, aiJson, hasAi } from '../ai.js';
 
 export const summarizerRouter = Router();
 summarizerRouter.use(requireAuth);
