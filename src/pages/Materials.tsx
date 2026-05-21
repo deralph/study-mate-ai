@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X } from 'lucide-react';
+import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X, Sparkles, MessageCircle, BookOpen, HelpCircle, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { materialsApi, type ApiMaterial } from '@/lib/api';
+import { materialsApi, summarizerApi, chatApi, type ApiMaterial } from '@/lib/api';
 
 const fileTypeColors: Record<string, string> = {
   pdf: 'bg-destructive/10 text-destructive',
@@ -11,6 +11,15 @@ const fileTypeColors: Record<string, string> = {
   txt: 'bg-muted text-muted-foreground',
   image: 'bg-accent/10 text-accent',
 };
+
+type Analysis = { summary: string; questions: string[]; insights: string[] };
+type ChatMsg = { id: string; role: 'user' | 'ai'; content: string };
+
+const AI_TABS = [
+  { key: 'summary' as const, label: 'Summary', icon: BookOpen },
+  { key: 'questions' as const, label: 'Questions', icon: HelpCircle },
+  { key: 'chat' as const, label: 'Chat', icon: MessageCircle },
+];
 
 export default function Materials() {
   const [materials, setMaterials] = useState<ApiMaterial[]>([]);
@@ -28,11 +37,30 @@ export default function Materials() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
+  const [aiTab, setAiTab] = useState<'summary' | 'questions' | 'chat'>('summary');
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
 
   useEffect(() => {
     materialsApi.list().then(d => setMaterials(d.materials)).catch(() => toast.error('Failed to load materials'));
   }, []);
+
+  useEffect(() => {
+    setAnalysis(null);
+    setAiTab('summary');
+    setChatMessages([]);
+    setChatInput('');
+  }, [viewing?.id]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   const subjects = ['All', ...new Set(materials.map((m) => m.subject).filter(Boolean))];
   const filtered = materials.filter(
@@ -84,6 +112,41 @@ export default function Materials() {
       toast.error(err instanceof Error ? err.message : 'Failed to open material');
     } finally {
       setOpening(null);
+    }
+  };
+
+  const closeViewer = () => {
+    setViewing(null);
+    if (fileUrl) { URL.revokeObjectURL(fileUrl); setFileUrl(''); }
+  };
+
+  const handleAnalyze = async () => {
+    if (!viewing || analyzing) return;
+    setAnalyzing(true);
+    try {
+      const result = await summarizerApi.analyzeMaterial(viewing.id);
+      setAnalysis(result);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Analysis failed');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleChatSend = async () => {
+    const msg = chatInput.trim();
+    if (!msg || !viewing || chatSending) return;
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: msg, id: Date.now().toString() }]);
+    setChatSending(true);
+    try {
+      const res = await chatApi.quickChat(msg, [viewing.id]);
+      setChatMessages(prev => [...prev, { role: 'ai', content: res.content, id: res.timestamp }]);
+    } catch {
+      toast.error('Failed to send message');
+      setChatMessages(prev => prev.slice(0, -1));
+    } finally {
+      setChatSending(false);
     }
   };
 
@@ -196,31 +259,186 @@ export default function Materials() {
       )}
 
       {viewing && (
-        <div className="fixed inset-0 z-50 bg-foreground/60 backdrop-blur-sm p-3 lg:p-8 flex items-center justify-center">
-          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="bg-card rounded-xl shadow-float border border-border w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-border flex items-start justify-between gap-4">
+        <div className="fixed inset-0 z-50 bg-foreground/60 backdrop-blur-sm p-2 lg:p-6 flex items-center justify-center">
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-card rounded-xl shadow-float border border-border w-full max-w-7xl h-[94vh] flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="p-4 border-b border-border flex items-center justify-between gap-4 shrink-0">
               <div className="min-w-0">
                 <h2 className="font-semibold text-foreground truncate">{viewing.title}</h2>
                 <p className="text-xs text-muted-foreground">{viewing.subject} · {viewing.file_type} · {viewing.file_size}</p>
               </div>
-              <button onClick={() => setViewing(null)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition" title="Close">
+              <button onClick={closeViewer} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition shrink-0">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 bg-background overflow-auto">
-              {['PNG', 'JPG', 'JPEG'].includes(viewing.file_type) ? (
-                <img src={fileUrl} alt={viewing.title} className="max-w-full mx-auto" />
-              ) : viewing.file_type === 'PDF' ? (
-                <iframe src={fileUrl} title={viewing.title} className="w-full h-full" />
-              ) : viewing.text_content ? (
-                <pre className="whitespace-pre-wrap text-sm leading-6 p-5 text-foreground font-sans">{viewing.text_content}</pre>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                  <FileText className="h-14 w-14 text-muted-foreground/30 mb-3" />
-                  <p className="text-foreground font-medium">Preview not available for this file type</p>
-                  <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium">Open original file</a>
+
+            {/* Split layout: doc left, AI right */}
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+
+              {/* Document Preview */}
+              <div className="h-[40vh] lg:h-auto lg:flex-1 overflow-auto bg-background border-b lg:border-b-0 lg:border-r border-border">
+                {['PNG', 'JPG', 'JPEG'].includes(viewing.file_type) ? (
+                  <img src={fileUrl} alt={viewing.title} className="max-w-full mx-auto" />
+                ) : viewing.file_type === 'PDF' ? (
+                  <iframe src={fileUrl} title={viewing.title} className="w-full h-full min-h-[600px]" />
+                ) : viewing.text_content ? (
+                  <pre className="whitespace-pre-wrap text-sm leading-6 p-5 text-foreground font-sans">{viewing.text_content}</pre>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6">
+                    <FileText className="h-14 w-14 text-muted-foreground/30 mb-3" />
+                    <p className="text-foreground font-medium">Preview not available</p>
+                    <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium">Open file</a>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Panel */}
+              <div className="flex-1 lg:flex-none lg:w-[420px] flex flex-col overflow-hidden">
+
+                {/* Tabs */}
+                <div className="flex border-b border-border shrink-0 p-2 gap-1 bg-muted/30">
+                  {AI_TABS.map(({ key, label, icon: Icon }) => (
+                    <button key={key} onClick={() => setAiTab(key)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-medium transition ${
+                        aiTab === key ? 'gradient-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      }`}>
+                      <Icon className="h-3.5 w-3.5" /> {label}
+                    </button>
+                  ))}
                 </div>
-              )}
+
+                {/* Summary & Questions */}
+                {(aiTab === 'summary' || aiTab === 'questions') && (
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {!analysis && !analyzing && (
+                      <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-10">
+                        <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center">
+                          <Sparkles className="h-8 w-8 text-primary-foreground" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground">AI Analysis</p>
+                          <p className="text-xs text-muted-foreground mt-1 max-w-[240px]">Generate a summary, key insights, and likely exam questions from this material</p>
+                        </div>
+                        <button onClick={handleAnalyze}
+                          className="px-5 py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:opacity-90 transition">
+                          <Sparkles className="h-4 w-4" /> Analyse Material
+                        </button>
+                      </div>
+                    )}
+
+                    {analyzing && (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 py-10">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <p className="text-sm text-muted-foreground">Analysing material…</p>
+                        <p className="text-xs text-muted-foreground">This may take a moment</p>
+                      </div>
+                    )}
+
+                    {analysis && aiTab === 'summary' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-foreground text-sm">Summary</h3>
+                          <button onClick={handleAnalyze} disabled={analyzing} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition">
+                            <Sparkles className="h-3 w-3" /> Regenerate
+                          </button>
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{analysis.summary}</p>
+                        {analysis.insights?.length > 0 && (
+                          <>
+                            <h3 className="font-semibold text-foreground text-sm pt-2">Key Insights</h3>
+                            <ul className="space-y-2">
+                              {analysis.insights.map((insight, i) => (
+                                <li key={i} className="flex gap-2.5 text-sm">
+                                  <span className="shrink-0 w-5 h-5 rounded-full gradient-primary text-primary-foreground flex items-center justify-center text-xs font-bold mt-0.5">{i + 1}</span>
+                                  <span className="text-foreground leading-relaxed">{insight}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {analysis && aiTab === 'questions' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-foreground text-sm">Likely Exam Questions</h3>
+                          <button onClick={handleAnalyze} disabled={analyzing} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition">
+                            <Sparkles className="h-3 w-3" /> Regenerate
+                          </button>
+                        </div>
+                        <ol className="space-y-2.5">
+                          {analysis.questions.map((q, i) => (
+                            <li key={i} className="bg-muted/50 rounded-lg p-3 text-sm flex gap-2">
+                              <span className="font-bold text-primary shrink-0">{i + 1}.</span>
+                              <span className="text-foreground">{q}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Chat */}
+                {aiTab === 'chat' && (
+                  <>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      {chatMessages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-10">
+                          <MessageCircle className="h-10 w-10 text-muted-foreground/30" />
+                          <div>
+                            <p className="font-medium text-foreground text-sm">Chat about this material</p>
+                            <p className="text-xs text-muted-foreground mt-1">Ask any question based on the content</p>
+                          </div>
+                        </div>
+                      )}
+                      {chatMessages.map((msg) => (
+                        <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          {msg.role === 'ai' && (
+                            <div className="w-6 h-6 rounded-full gradient-primary flex items-center justify-center shrink-0 mt-0.5">
+                              <Sparkles className="h-3 w-3 text-primary-foreground" />
+                            </div>
+                          )}
+                          <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                            msg.role === 'user' ? 'gradient-primary text-primary-foreground' : 'bg-muted text-foreground'
+                          }`}>
+                            {msg.content}
+                          </div>
+                        </div>
+                      ))}
+                      {chatSending && (
+                        <div className="flex gap-2">
+                          <div className="w-6 h-6 rounded-full gradient-primary flex items-center justify-center shrink-0">
+                            <Sparkles className="h-3 w-3 text-primary-foreground" />
+                          </div>
+                          <div className="bg-muted rounded-xl px-3 py-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          </div>
+                        </div>
+                      )}
+                      <div ref={chatEndRef} />
+                    </div>
+                    <div className="p-3 border-t border-border shrink-0">
+                      <div className="flex gap-2">
+                        <input
+                          value={chatInput}
+                          onChange={e => setChatInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                          placeholder="Ask about this material…"
+                          className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                        <button onClick={handleChatSend} disabled={!chatInput.trim() || chatSending}
+                          className="p-2 rounded-lg gradient-primary text-primary-foreground hover:opacity-90 transition disabled:opacity-50">
+                          <Send className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </motion.div>
         </div>

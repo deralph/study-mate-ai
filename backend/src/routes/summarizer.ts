@@ -33,3 +33,28 @@ summarizerRouter.post('/material/:id', async (req: AuthedRequest, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+summarizerRouter.post('/material/:id/full', async (req: AuthedRequest, res) => {
+  const m: any = db.prepare('SELECT title, text_content FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+  if (!m) return res.status(404).json({ error: 'Not found' });
+  if (!m.text_content) return res.status(400).json({ error: 'No extractable text in this material' });
+  if (!hasAi()) return res.status(503).json({ error: 'AI not configured' });
+  try {
+    const result = await aiJson<{ summary: string; questions: string[]; insights: string[] }>(
+      `Analyse this study material for a Nigerian university student. Respond ONLY with valid JSON (no markdown fences) in this exact structure:
+{
+  "summary": "comprehensive 3-5 paragraph summary of the material",
+  "questions": ["likely exam or test question 1?", "question 2?"],
+  "insights": ["key insight or important point 1", "insight 2"]
+}
+Include 8-10 questions and 5-7 insights.
+
+Material title: "${m.title}"
+Content:
+${m.text_content.slice(0, 25000)}`
+    );
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});

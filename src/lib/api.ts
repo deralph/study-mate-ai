@@ -278,6 +278,9 @@ export const summarizerApi = {
 
   summarizeMaterial: (materialId: string) =>
     post<{ summary: string; materialTitle: string }>(`/summarizer/material/${materialId}`),
+
+  analyzeMaterial: (materialId: string) =>
+    post<{ summary: string; questions: string[]; insights: string[] }>(`/summarizer/material/${materialId}/full`),
 };
 
 // ─── Recommendations API ─────────────────────────────────────────────────────
