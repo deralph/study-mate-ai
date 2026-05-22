@@ -46,6 +46,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isMoreActive = moreNavItems.some((item) => location.pathname === item.to);
   const firedRef = useRef<Set<string>>(new Set());
 
+  // Persist current path so login can redirect back here
+  useEffect(() => {
+    localStorage.setItem('studymate_last_path', location.pathname);
+  }, [location.pathname]);
+
   useEffect(() => {
     if (!('Notification' in window)) return;
     const checkReminders = async () => {

@@ -71,26 +71,8 @@ export default function Profile() {
         </button>
       </motion.div>
 
-      {/* Study Preferences */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        className="bg-card/80 backdrop-blur-sm rounded-xl p-5 shadow-card border border-border/50 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground">Push Notifications</p>
-              <p className="text-xs text-muted-foreground">
-                {typeof Notification !== 'undefined' && Notification.permission === 'granted'
-                  ? '✓ Enabled — reminders will ring at their set time'
-                  : typeof Notification !== 'undefined' && Notification.permission === 'denied'
-                  ? '✗ Blocked in browser — allow in site settings'
-                  : 'Enable to receive study reminder alerts'}
-              </p>
-            </div>
-            <NotificationToggle />
-          </div>
-        </div>
-      </motion.div>
+      {/* Notifications */}
+      <NotificationSection />
 
       {/* Danger Zone */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
@@ -132,25 +114,56 @@ export default function Profile() {
   );
 }
 
-function NotificationToggle() {
-  const [perm, setPerm] = useState(() =>
+function NotificationSection() {
+  const [perm, setPerm] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
   const on = perm === 'granted';
   const blocked = perm === 'denied';
+
+  const descText = on
+    ? '✓ Enabled — reminders will ring at their set time'
+    : blocked
+    ? '✗ Blocked in browser — go to site settings to allow'
+    : 'Tap to enable study reminder alerts';
+
   const toggle = async () => {
-    if (blocked) { toast.error('Notifications are blocked. Allow them in your browser site settings.'); return; }
-    if (!on) {
-      const result = await Notification.requestPermission();
-      setPerm(result);
-      if (result === 'granted') toast.success('Notifications enabled! Reminders will ring on time.');
-      else toast.error('Permission not granted.');
+    if (typeof Notification === 'undefined') {
+      toast.error('Your browser does not support notifications.');
+      return;
     }
+    if (blocked) {
+      toast.error('Notifications are blocked. Allow them in your browser site settings.');
+      return;
+    }
+    if (on) {
+      toast.info('To disable notifications, use your browser\'s site settings.');
+      return;
+    }
+    const result = await Notification.requestPermission();
+    setPerm(result);
+    if (result === 'granted') toast.success('Notifications enabled! Reminders will ring on time.');
+    else if (result === 'denied') toast.error('Notifications were blocked. Allow them in browser settings.');
+    else toast.info('Permission request dismissed.');
   };
+
   return (
-    <button onClick={toggle} disabled={blocked} title={blocked ? 'Blocked in browser settings' : undefined}
-      className={`w-11 h-6 rounded-full transition-colors relative disabled:opacity-50 ${on ? 'bg-primary' : 'bg-muted'}`}>
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-card shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
-    </button>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+      className="bg-card/80 backdrop-blur-sm rounded-xl p-5 shadow-card border border-border/50 space-y-4">
+      <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1">
+          <p className="text-sm text-foreground">Push Notifications</p>
+          <p className={`text-xs mt-0.5 ${on ? 'text-secondary' : blocked ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {descText}
+          </p>
+        </div>
+        <button onClick={toggle}
+          title={blocked ? 'Blocked — allow in browser site settings' : on ? 'Enabled — click to learn how to disable' : 'Click to enable'}
+          className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${on ? 'bg-primary' : blocked ? 'bg-muted opacity-50' : 'bg-muted'}`}>
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-card shadow transition-transform duration-200 ${on ? 'translate-x-5' : ''}`} />
+        </button>
+      </div>
+    </motion.div>
   );
 }

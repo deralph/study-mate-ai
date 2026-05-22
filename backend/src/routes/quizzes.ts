@@ -65,13 +65,34 @@ ${(material.text_content || '').slice(0, 12000)}`;
     .run(quizId, req.userId!, materialId, `${material.title} Quiz`, material.subject, questions.length, Math.max(5, questions.length));
 
   const insertQ = db.prepare('INSERT INTO quiz_questions (id, quiz_id, question, type, options_json, correct_answer, explanation, position) VALUES (?,?,?,?,?,?,?,?)');
-  questions.forEach((q, i) => {
+  questions.map(normalizeQuestion).forEach((q, i) => {
     const opts = q.options ? q.options : (q.type === 'true-false' ? ['True', 'False'] : null);
     insertQ.run(uid(), quizId, q.question, q.type, opts ? JSON.stringify(opts) : null, q.correctAnswer, q.explanation || '', i);
   });
 
   return res.json({ quiz: { ...quizSummary(db.prepare('SELECT * FROM quizzes WHERE id=?').get(quizId), req.userId!), questions: getQuestions(quizId, true) } });
 });
+
+function normalizeQuestion(q: GeneratedQuestion): GeneratedQuestion {
+  // True/false: correctAnswer must exactly match one of the stored options
+  if (q.type === 'true-false') {
+    const lower = String(q.correctAnswer).trim().toLowerCase();
+    return { ...q, correctAnswer: lower === 'false' ? 'False' : 'True', options: ['True', 'False'] };
+  }
+  // Multiple-choice: AI sometimes returns "A", "B", "C", "D" instead of the option text
+  if (q.type === 'multiple-choice' && Array.isArray(q.options) && q.options.length > 0) {
+    const letterMap: Record<string, number> = { a: 0, b: 1, c: 2, d: 3, e: 4 };
+    const key = String(q.correctAnswer).trim().toLowerCase().replace(/[.):\s]/g, '');
+    if (key.length === 1 && letterMap[key] !== undefined) {
+      const idx = letterMap[key];
+      if (idx < q.options.length) return { ...q, correctAnswer: q.options[idx] };
+    }
+    // If correctAnswer is not one of the options (case-insensitive), try to find it
+    const match = q.options.find(o => o.trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase());
+    if (match) return { ...q, correctAnswer: match };
+  }
+  return q;
+}
 
 function getQuestions(quizId: string, includeAnswers: boolean) {
   const rows: any[] = db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position ASC').all(quizId);

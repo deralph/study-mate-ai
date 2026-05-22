@@ -50,7 +50,9 @@ export default function Login() {
         await login(email, password);
         toast.success('Welcome back!');
       }
-      navigate('/');
+      const lastPath = localStorage.getItem('studymate_last_path');
+      localStorage.removeItem('studymate_last_path');
+      navigate(lastPath && lastPath !== '/login' ? lastPath : '/');
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

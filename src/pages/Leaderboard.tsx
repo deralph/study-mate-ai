@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { Trophy, Medal, Crown, Flame, TrendingUp, Star } from 'lucide-react';
+import { Trophy, Medal, Crown, Flame, TrendingUp, Star, User } from 'lucide-react';
 import { leaderboardApi } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 interface LeaderboardEntry {
   id: string;
@@ -30,9 +31,14 @@ const RankIcon = ({ rank }: { rank: number }) => {
 
 export default function Leaderboard() {
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [myRank, setMyRank] = useState<{ rank: number; points: number } | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
-    leaderboardApi.get().then(d => setLeaderboardData(d.leaderboard)).catch(() => {});
+    leaderboardApi.get().then(d => {
+      setLeaderboardData(d.leaderboard);
+      setMyRank(d.myRank);
+    }).catch(() => {});
   }, []);
 
   const top3 = leaderboardData.slice(0, 3);
@@ -85,6 +91,24 @@ export default function Leaderboard() {
         </div>
       )}
 
+      {/* My Rank Card */}
+      {myRank && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+          className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+            <User className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">Your Rank</p>
+            <p className="text-xs text-muted-foreground">{user?.department} · Level {user?.level}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold text-primary">#{myRank.rank}</p>
+            <p className="text-xs text-muted-foreground">{myRank.points.toLocaleString()} pts</p>
+          </div>
+        </motion.div>
+      )}
+
       {/* Full List */}
       <div className="bg-card/80 backdrop-blur-sm rounded-xl shadow-card border border-border/50 overflow-hidden">
         <div className="p-4 border-b border-border/50">
@@ -92,27 +116,34 @@ export default function Leaderboard() {
         </div>
         <div className="divide-y divide-border/50">
           {leaderboardData.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground text-center">No rankings yet. Start studying to appear here!</p>
-          ) : leaderboardData.map((entry, i) => (
-            <motion.div key={entry.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.03 }}
-              className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition ${entry.rank <= 3 ? 'bg-accent/5' : ''}`}>
-              <RankIcon rank={entry.rank} />
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground ${entry.rank <= 3 ? `bg-gradient-to-br ${rankStyles[entry.rank - 1]}` : 'bg-primary/70'}`}>
-                {entry.avatar}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{entry.name}</p>
-                <p className="text-[10px] text-muted-foreground">{entry.department} · Level {entry.level}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold text-foreground">{entry.points.toLocaleString()}</p>
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground justify-end">
-                  <span className="flex items-center gap-0.5"><Flame className="h-3 w-3 text-accent" />{entry.streak}</span>
-                  <span>{entry.quizzes} quizzes</span>
+            <div className="p-8 text-center space-y-2">
+              <Trophy className="h-10 w-10 mx-auto text-muted-foreground/30" />
+              <p className="text-sm text-foreground font-medium">No rankings yet</p>
+              <p className="text-xs text-muted-foreground">Complete quizzes and study sessions to earn points and appear here!</p>
+            </div>
+          ) : leaderboardData.map((entry, i) => {
+            const isMe = entry.id === user?.id;
+            return (
+              <motion.div key={entry.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.03 }}
+                className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition ${isMe ? 'bg-primary/8 border-l-2 border-primary' : entry.rank <= 3 ? 'bg-accent/5' : ''}`}>
+                <RankIcon rank={entry.rank} />
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground ${isMe ? 'bg-primary' : entry.rank <= 3 ? `bg-gradient-to-br ${rankStyles[entry.rank - 1]}` : 'bg-primary/70'}`}>
+                  {entry.avatar || entry.name[0]}
                 </div>
-              </div>
-            </motion.div>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{entry.name}{isMe && <span className="ml-1 text-[10px] text-primary font-semibold">(you)</span>}</p>
+                  <p className="text-[10px] text-muted-foreground">{entry.department} · Level {entry.level}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-foreground">{entry.points.toLocaleString()}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground justify-end">
+                    <span className="flex items-center gap-0.5"><Flame className="h-3 w-3 text-accent" />{entry.streak}</span>
+                    <span>{entry.quizzes} quizzes</span>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </div>

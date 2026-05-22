@@ -44,7 +44,18 @@ authRouter.post('/login', async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
-  res.json({ token: signToken(user.id), user: publicUser(user) });
+  // Update study streak
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (user.last_active_date === today) {
+    // already active today — no change
+  } else if (user.last_active_date === yesterday) {
+    db.prepare('UPDATE users SET study_streak = study_streak + 1, last_active_date = ? WHERE id = ?').run(today, user.id);
+  } else {
+    db.prepare('UPDATE users SET study_streak = 1, last_active_date = ? WHERE id = ?').run(today, user.id);
+  }
+  const freshUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  res.json({ token: signToken(user.id), user: publicUser(freshUser) });
 });
 
 authRouter.get('/me', requireAuth, (req: AuthedRequest, res) => {

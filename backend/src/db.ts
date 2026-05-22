@@ -12,7 +12,14 @@ import { fileURLToPath } from 'node:url';
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.resolve(__dirname, '..', 'data.db');
+// DB_PATH env var lets Render/Railway users point to a persistent disk.
+// Fallback: store alongside the backend root (outside dist/).
+const dbPath = process.env.DB_PATH || path.resolve(__dirname, '..', 'data.db');
+if (process.env.DB_PATH) {
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  console.log(`[db] Using persistent path: ${dbPath}`);
+}
 
 const SQL = await initSqlJs();
 
