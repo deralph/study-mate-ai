@@ -74,28 +74,20 @@ export default function Profile() {
       {/* Study Preferences */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
         className="bg-card/80 backdrop-blur-sm rounded-xl p-5 shadow-card border border-border/50 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">Study Preferences</h3>
+        <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-foreground">Low Bandwidth Mode</p>
-              <p className="text-xs text-muted-foreground">Reduce data usage</p>
-            </div>
-            <ToggleSwitch />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
               <p className="text-sm text-foreground">Push Notifications</p>
-              <p className="text-xs text-muted-foreground">Study reminders and updates</p>
+              <p className="text-xs text-muted-foreground">
+                {typeof Notification !== 'undefined' && Notification.permission === 'granted'
+                  ? '✓ Enabled — reminders will ring at their set time'
+                  : typeof Notification !== 'undefined' && Notification.permission === 'denied'
+                  ? '✗ Blocked in browser — allow in site settings'
+                  : 'Enable to receive study reminder alerts'}
+              </p>
             </div>
-            <ToggleSwitch defaultChecked />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-foreground">Auto-detect Device</p>
-              <p className="text-xs text-muted-foreground">Adapt content to your device</p>
-            </div>
-            <ToggleSwitch defaultChecked />
+            <NotificationToggle />
           </div>
         </div>
       </motion.div>
@@ -140,10 +132,24 @@ export default function Profile() {
   );
 }
 
-function ToggleSwitch({ defaultChecked = false }: { defaultChecked?: boolean }) {
-  const [on, setOn] = useState(defaultChecked);
+function NotificationToggle() {
+  const [perm, setPerm] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+  const on = perm === 'granted';
+  const blocked = perm === 'denied';
+  const toggle = async () => {
+    if (blocked) { toast.error('Notifications are blocked. Allow them in your browser site settings.'); return; }
+    if (!on) {
+      const result = await Notification.requestPermission();
+      setPerm(result);
+      if (result === 'granted') toast.success('Notifications enabled! Reminders will ring on time.');
+      else toast.error('Permission not granted.');
+    }
+  };
   return (
-    <button onClick={() => setOn(!on)} className={`w-11 h-6 rounded-full transition-colors relative ${on ? 'bg-primary' : 'bg-muted'}`}>
+    <button onClick={toggle} disabled={blocked} title={blocked ? 'Blocked in browser settings' : undefined}
+      className={`w-11 h-6 rounded-full transition-colors relative disabled:opacity-50 ${on ? 'bg-primary' : 'bg-muted'}`}>
       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-card shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
     </button>
   );

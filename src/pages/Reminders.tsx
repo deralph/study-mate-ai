@@ -27,11 +27,15 @@ export default function Reminders() {
   const addReminder = async () => {
     if (!title.trim()) { toast.error('Enter a reminder title'); return; }
     if (!time) { toast.error('Select a reminder time'); return; }
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
     try {
       const { reminder } = await remindersApi.create({ title, time, recurrence });
       setReminders(prev => [...prev, reminder]);
       setTitle(''); setTime(''); setRecurrence('once'); setShowForm(false);
-      toast.success('Reminder created!');
+      const permOk = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+      toast.success(permOk ? 'Reminder created! You\'ll get a notification at the set time.' : 'Reminder created! Enable notifications in Profile to get alerts.');
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to create reminder');
     }

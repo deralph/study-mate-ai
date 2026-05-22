@@ -146,12 +146,17 @@ export default function Quizzes() {
 
         <div className="space-y-3">
           {resultQuestions.map((q) => {
-            const correct = (answers[q.id] || '').toLowerCase().trim() === q.correctAnswer.toLowerCase().trim();
+            const correct = q.isCorrect ?? ((answers[q.id] || '').toLowerCase().trim() === q.correctAnswer.toLowerCase().trim());
             return (
               <div key={q.id} className={`bg-card rounded-xl p-4 shadow-card border-l-4 ${correct ? 'border-secondary' : 'border-destructive'}`}>
-                <p className="text-sm font-medium text-foreground">{q.question}</p>
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <p className="text-sm font-medium text-foreground">{q.question}</p>
+                  <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${correct ? 'bg-secondary/10 text-secondary' : 'bg-destructive/10 text-destructive'}`}>
+                    {correct ? '✓ Correct' : '✗ Wrong'}
+                  </span>
+                </div>
                 <p className="text-xs mt-1"><span className="text-muted-foreground">Your answer:</span> <span className={correct ? 'text-secondary' : 'text-destructive'}>{answers[q.id] || '(no answer)'}</span></p>
-                {!correct && <p className="text-xs text-secondary mt-1">Correct: {q.correctAnswer}</p>}
+                {!correct && <p className="text-xs text-secondary mt-1 font-medium">✓ Correct: {q.correctAnswer}</p>}
                 <p className="text-xs text-muted-foreground mt-2 italic">{q.explanation}</p>
               </div>
             );

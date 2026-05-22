@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, BookOpen, MessageSquare, User, Library, BarChart3, Bell, Lightbulb, FolderOpen, MoreHorizontal, X, Sparkles, CalendarDays, Trophy, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { remindersApi } from '@/lib/api';
 import { toast } from 'sonner';
 
 const bottomNavItems = [
@@ -43,6 +44,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const isMoreActive = moreNavItems.some((item) => location.pathname === item.to);
+  const firedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!('Notification' in window)) return;
+    const checkReminders = async () => {
+      if (Notification.permission !== 'granted') return;
+      const now = new Date();
+      const hhmm = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const dayKey = now.toDateString();
+      try {
+        const { reminders } = await remindersApi.list();
+        reminders.filter(r => r.enabled && r.time === hhmm).forEach(r => {
+          const key = `${r.id}-${hhmm}-${dayKey}`;
+          if (!firedRef.current.has(key)) {
+            firedRef.current.add(key);
+            new Notification(`⏰ ${r.title}`, { body: 'Study time! 📚', icon: '/favicon.ico' });
+            toast.info(`Reminder: ${r.title}`);
+          }
+        });
+      } catch { /* silent */ }
+    };
+    const id = setInterval(checkReminders, 30_000);
+    checkReminders();
+    return () => clearInterval(id);
+  }, []);
 
   const handleLogout = () => {
     logout();

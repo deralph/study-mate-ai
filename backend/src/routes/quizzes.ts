@@ -98,12 +98,16 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
   const questions: any[] = db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position').all(q.id);
 
   let score = 0;
+  const correctMap: Record<string, boolean> = {};
   for (const qq of questions) {
     const given = String(answers[qq.id] ?? '').trim().toLowerCase();
     const correct = String(qq.correct_answer).trim().toLowerCase();
-    if (given && (given === correct || (qq.type === 'short-answer' && correct.includes(given) || given.includes(correct)))) {
-      score++;
-    }
+    const isCorrect = !!(given && (
+      given === correct ||
+      (qq.type === 'short-answer' && (correct.includes(given) || given.includes(correct)))
+    ));
+    correctMap[qq.id] = isCorrect;
+    if (isCorrect) score++;
   }
   const total = questions.length;
   const percentage = Math.round((score / total) * 100);
@@ -119,7 +123,15 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
 
   res.json({
     attempt: { id: attemptId, score, total, percentage, pointsEarned },
-    questions: getQuestions(q.id, true),
+    questions: questions.map(r => ({
+      id: r.id,
+      question: r.question,
+      type: r.type,
+      options: r.options_json ? JSON.parse(r.options_json) : (r.type === 'true-false' ? ['True', 'False'] : undefined),
+      correctAnswer: r.correct_answer,
+      explanation: r.explanation,
+      isCorrect: correctMap[r.id] ?? false,
+    })),
   });
 });
 

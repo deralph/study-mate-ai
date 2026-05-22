@@ -98,6 +98,7 @@ export interface ApiQuestion {
   options?: string[];
   correctAnswer: string;
   explanation: string;
+  isCorrect?: boolean;
 }
 
 export interface ApiReminder {
