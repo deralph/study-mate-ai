@@ -32,18 +32,28 @@ quizzesRouter.get('/', (req: AuthedRequest, res) => {
 });
 
 quizzesRouter.post('/generate', async (req: AuthedRequest, res) => {
-  const { materialId, questionCount = 10 } = req.body ?? {};
+  const { materialId, questionCount = 10, duration = 15, types = ['mcq', 'tf', 'short'] } = req.body ?? {};
   if (!materialId) return res.status(400).json({ error: 'materialId required' });
   const material: any = db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(materialId, req.userId!);
   if (!material) return res.status(404).json({ error: 'Material not found' });
 
-  const count = Math.max(3, Math.min(20, Number(questionCount) || 10));
+  const count = Math.max(3, Math.min(30, Number(questionCount) || 10));
+  const timerMinutes = Math.max(5, Math.min(60, Number(duration) || 15));
+  
+  // Build type filter for prompt
+  const allowedTypes: string[] = Array.isArray(types) ? types : ['mcq', 'tf', 'short'];
+  const typeDesc = [
+    allowedTypes.includes('mcq') ? 'multiple-choice' : '',
+    allowedTypes.includes('tf') ? 'true-false' : '',
+    allowedTypes.includes('short') ? 'short-answer' : '',
+  ].filter(Boolean).join(', ');
+
   const prompt = `Based on the following study material, generate exactly ${count} quiz questions STRICTLY about the content of this material. Every question must reference specific facts, concepts, or terms from the material below - do NOT generate generic study tips.
-Mix multiple-choice, true-false, and short-answer types.
+Use ONLY these question types: ${typeDesc}.
 Return STRICT JSON array with this shape:
 [{"question":"...","type":"multiple-choice","options":["A","B","C","D"],"correctAnswer":"A","explanation":"..."}]
 For true-false: correctAnswer is "True" or "False", options must be ["True","False"].
-For short-answer: omit options, correctAnswer is the key expected answer.
+For short-answer: omit options, correctAnswer is the key expected answer (accept common abbreviations/acronyms).
 
 MATERIAL (${material.title}):
 ${(material.text_content || '').slice(0, 12000)}`;
@@ -62,7 +72,7 @@ ${(material.text_content || '').slice(0, 12000)}`;
 
   const quizId = uid();
   db.prepare('INSERT INTO quizzes (id, user_id, material_id, title, subject, question_count, duration) VALUES (?,?,?,?,?,?,?)')
-    .run(quizId, req.userId!, materialId, `${material.title} Quiz`, material.subject, questions.length, Math.max(5, questions.length));
+    .run(quizId, req.userId!, materialId, `${material.title} Quiz`, material.subject, questions.length, timerMinutes);
 
   const insertQ = db.prepare('INSERT INTO quiz_questions (id, quiz_id, question, type, options_json, correct_answer, explanation, position) VALUES (?,?,?,?,?,?,?,?)');
   questions.map(normalizeQuestion).forEach((q, i) => {
@@ -112,6 +122,67 @@ quizzesRouter.get('/:id', (req: AuthedRequest, res) => {
   res.json({ quiz: { ...quizSummary(q, req.userId!), questions: getQuestions(q.id, false) } });
 });
 
+// Enhanced answer checking with abbreviation/acronym support
+function isAnswerCorrect(given: string, correct: string, type: string): boolean {
+  if (!given) return false;
+  if (given === correct) return true;
+  
+  // For multiple choice and true-false, exact match only
+  if (type === 'multiple-choice' || type === 'true-false') {
+    return given === correct;
+  }
+  
+  // For short answer, allow more flexibility
+  if (type === 'short-answer') {
+    // Direct substring match (for abbreviations or partial matches)
+    if (correct.includes(given) || given.includes(correct)) return true;
+    
+    // Handle common abbreviations (e.g., "DNA" for "Deoxyribonucleic Acid")
+    const givenWords = given.split(/\s+/);
+    const correctWords = correct.split(/\s+/);
+    
+    // Check if answer is an acronym of correct answer
+    if (givenWords.length === 1 && correctWords.length > 1) {
+      const acronym = correctWords.map(w => w[0]).join('').toLowerCase();
+      if (given === acronym) return true;
+    }
+    
+    // Check if correct is an acronym of answer
+    if (correctWords.length === 1 && givenWords.length > 1) {
+      const givenAcronym = givenWords.map(w => w[0]).join('').toLowerCase();
+      if (correct === givenAcronym) return true;
+    }
+    
+    // Check significant word overlap (at least 50% of words match)
+    const givenSet = new Set(givenWords);
+    const correctSet = new Set(correctWords);
+    const intersection = [...givenSet].filter(x => correctSet.has(x));
+    if (intersection.length >= Math.min(givenWords.length, correctWords.length) * 0.5) return true;
+    
+    // Allow small typos (Levenshtein distance <= 2 for single words)
+    if (givenWords.length === 1 && correctWords.length === 1) {
+      if (levenshteinDistance(given, correct) <= 2) return true;
+    }
+  }
+  
+  return false;
+}
+
+// Levenshtein distance for fuzzy matching
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i][j] = b[i - 1] === a[j - 1] 
+        ? matrix[i - 1][j - 1] 
+        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
 quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
   const q: any = db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!q) return res.status(404).json({ error: 'Not found' });
@@ -123,10 +194,7 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
   for (const qq of questions) {
     const given = String(answers[qq.id] ?? '').trim().toLowerCase();
     const correct = String(qq.correct_answer).trim().toLowerCase();
-    const isCorrect = !!(given && (
-      given === correct ||
-      (qq.type === 'short-answer' && (correct.includes(given) || given.includes(correct)))
-    ));
+    const isCorrect = isAnswerCorrect(given, correct, qq.type);
     correctMap[qq.id] = isCorrect;
     if (isCorrect) score++;
   }

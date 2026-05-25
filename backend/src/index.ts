@@ -14,6 +14,7 @@ import { leaderboardRouter } from './routes/leaderboard.js';
 import { studyPlanRouter } from './routes/studyPlan.js';
 import { summarizerRouter } from './routes/summarizer.js';
 import { recommendationsRouter } from './routes/recommendations.js';
+import { examPlannerRouter } from './routes/exam-planner.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
@@ -53,6 +54,7 @@ app.use('/api/leaderboard', leaderboardRouter);
 app.use('/api/study-plan', studyPlanRouter);
 app.use('/api/summarizer', summarizerRouter);
 app.use('/api/recommendations', recommendationsRouter);
+app.use('/api/exam-planner', examPlannerRouter);
 
 // 404 for unmatched /api routes (must come after all API routers)
 app.use('/api', (_req, res) => {

@@ -240,6 +240,25 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   score INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS timetables (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_timetables_user ON timetables(user_id);
+
+CREATE TABLE IF NOT EXISTS exam_plans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  exam_date TEXT NOT NULL,
+  schedule_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_exam_plans_user ON exam_plans(user_id);
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────

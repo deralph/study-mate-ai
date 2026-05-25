@@ -21,6 +21,7 @@ const Login = lazy(() => import("./pages/Login"));
 const NotesSummarizer = lazy(() => import("./pages/NotesSummarizer"));
 const StudyPlan = lazy(() => import("./pages/StudyPlan"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const ExamPlanner = lazy(() => import("./pages/ExamPlanner"));
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ const AppRoutes = () => (
       <Route path="/notes-summarizer" element={<ProtectedRoute><AppLayout><NotesSummarizer /></AppLayout></ProtectedRoute>} />
       <Route path="/study-plan" element={<ProtectedRoute><AppLayout><StudyPlan /></AppLayout></ProtectedRoute>} />
       <Route path="/leaderboard" element={<ProtectedRoute><AppLayout><Leaderboard /></AppLayout></ProtectedRoute>} />
+      <Route path="/exam-planner" element={<ProtectedRoute><AppLayout><ExamPlanner /></AppLayout></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   </Suspense>

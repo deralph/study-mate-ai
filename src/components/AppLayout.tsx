@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, MessageSquare, User, Library, BarChart3, Bell, Lightbulb, FolderOpen, MoreHorizontal, X, Sparkles, CalendarDays, Trophy, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookOpen, MessageSquare, User, Library, BarChart3, Bell, Lightbulb, FolderOpen, MoreHorizontal, X, Sparkles, CalendarDays, Trophy, LogOut, CalendarCheck } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { remindersApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -17,6 +17,7 @@ const moreNavItems = [
   { to: '/progress', icon: BarChart3, label: 'Progress' },
   { to: '/notes-summarizer', icon: Sparkles, label: 'Summarizer' },
   { to: '/study-plan', icon: CalendarDays, label: 'Study Plan' },
+  { to: '/exam-planner', icon: CalendarCheck, label: 'Exam Planner' },
   { to: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
   { to: '/resources', icon: FolderOpen, label: 'Resources' },
@@ -31,6 +32,7 @@ const sideNavItems = [
   { to: '/progress', icon: BarChart3, label: 'Progress' },
   { to: '/notes-summarizer', icon: Sparkles, label: 'Summarizer' },
   { to: '/study-plan', icon: CalendarDays, label: 'Study Plan' },
+  { to: '/exam-planner', icon: CalendarCheck, label: 'Exam Planner' },
   { to: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
   { to: '/resources', icon: FolderOpen, label: 'Resources' },
@@ -51,8 +53,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('studymate_last_path', location.pathname);
   }, [location.pathname]);
 
+  // Alarm sound for reminders
+  const playAlarm = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime); // A5 note
+      oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime + 0.2);
+      gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.5);
+    } catch { /* audio not supported */ }
+  };
+
   useEffect(() => {
     if (!('Notification' in window)) return;
+    
+    // Request permission on first load if not decided
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
     const checkReminders = async () => {
       if (Notification.permission !== 'granted') return;
       const now = new Date();
@@ -64,13 +90,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const key = `${r.id}-${hhmm}-${dayKey}`;
           if (!firedRef.current.has(key)) {
             firedRef.current.add(key);
-            new Notification(`⏰ ${r.title}`, { body: 'Study time! 📚', icon: '/favicon.ico' });
-            toast.info(`Reminder: ${r.title}`);
+            // Play alarm sound
+            playAlarm();
+            // Show browser notification
+            new Notification(`⏰ ${r.title}`, { 
+              body: 'Study time! 📚 Click to open Study Mate AI', 
+              icon: '/favicon.ico',
+              requireInteraction: true 
+            });
+            // Show in-app toast
+            toast.info(`🔔 Reminder: ${r.title}`, { duration: 10000 });
           }
         });
       } catch { /* silent */ }
     };
-    const id = setInterval(checkReminders, 30_000);
+    
+    // Check every 15 seconds for more responsiveness
+    const id = setInterval(checkReminders, 15_000);
     checkReminders();
     return () => clearInterval(id);
   }, []);

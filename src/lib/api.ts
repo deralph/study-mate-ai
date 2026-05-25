@@ -202,8 +202,8 @@ export const chatApi = {
 export const quizzesApi = {
   list: () => get<{ quizzes: ApiQuiz[] }>('/quizzes'),
 
-  generate: (materialId: string, questionCount = 10) =>
-    post<{ quiz: ApiQuiz & { questions: ApiQuestion[] } }>('/quizzes/generate', { materialId, questionCount }),
+  generate: (materialId: string, questionCount = 10, duration = 15, types?: string[]) =>
+    post<{ quiz: ApiQuiz & { questions: ApiQuestion[] } }>('/quizzes/generate', { materialId, questionCount, duration, types }),
 
   get: (id: string) => get<{ quiz: ApiQuiz & { questions: ApiQuestion[] } }>(`/quizzes/${id}`),
 
@@ -290,4 +290,50 @@ export const recommendationsApi = {
   generate: () => post<{ recommendations: ApiRecommendation[] }>('/recommendations/generate'),
 
   markComplete: (id: string) => patch<{ message: string }>(`/recommendations/${id}/complete`),
+};
+
+// ─── Exam Planner Types & API ─────────────────────────────────────────────────
+export interface ApiTimetable {
+  id: string;
+  title: string;
+  type: 'school' | 'exam';
+  content: string;
+  created_at: string;
+}
+
+export interface ApiExamPlan {
+  id: string;
+  exam_date: string;
+  schedule: {
+    day: string;
+    date: string;
+    tasks: {
+      time: string;
+      subject: string;
+      activity: string;
+      duration: string;
+    }[];
+  }[];
+  created_at: string;
+}
+
+export const examPlannerApi = {
+  listTimetables: () => get<{ timetables: ApiTimetable[] }>('/exam-planner/timetables'),
+  
+  uploadTimetable: (file: File, title: string, type: 'school' | 'exam') => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('title', title);
+    form.append('type', type);
+    return request<{ timetable: ApiTimetable }>('/exam-planner/timetables', { method: 'POST', body: form });
+  },
+  
+  deleteTimetable: (id: string) => del<{ message: string }>(`/exam-planner/timetables/${id}`),
+  
+  listPlans: () => get<{ plans: ApiExamPlan[] }>('/exam-planner/plans'),
+  
+  generatePlan: (timetableIds: string[], examDate: string) =>
+    post<{ plan: ApiExamPlan }>('/exam-planner/plans', { timetableIds, examDate }),
+  
+  deletePlan: (id: string) => del<{ message: string }>(`/exam-planner/plans/${id}`),
 };

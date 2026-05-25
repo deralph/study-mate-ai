@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Clock, CheckCircle, ArrowLeft, ArrowRight, Timer, Loader2, Plus, BookOpen } from 'lucide-react';
+import { Play, Clock, CheckCircle, ArrowLeft, ArrowRight, Timer, Loader2, Plus, BookOpen, Settings, Volume2 } from 'lucide-react';
 import { quizzesApi, materialsApi, type ApiQuiz, type ApiQuestion, type ApiMaterial } from '@/lib/api';
 import { toast } from 'sonner';
 import { useLocation } from 'react-router-dom';
@@ -10,6 +10,8 @@ export default function Quizzes() {
   const [materials, setMaterials] = useState<ApiMaterial[]>([]);
   const [activeQuiz, setActiveQuiz] = useState<string | null>(null);
   const [activeQuestions, setActiveQuestions] = useState<ApiQuestion[]>([]);
+  const [quizDuration, setQuizDuration] = useState(15);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -18,6 +20,9 @@ export default function Quizzes() {
   const [generating, setGenerating] = useState(false);
   const [showGenerate, setShowGenerate] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState('');
+  const [questionCount, setQuestionCount] = useState(10);
+  const [questionTypes, setQuestionTypes] = useState({ mcq: true, tf: true, short: true });
+  const [customTimer, setCustomTimer] = useState(15);
   const location = useLocation();
 
   useEffect(() => {
@@ -30,13 +35,43 @@ export default function Quizzes() {
     }
   }, []);
 
+  // Timer countdown effect
+  useEffect(() => {
+    if (!activeQuiz || submitted || timeLeft <= 0) return;
+    const interval = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleSubmit();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeQuiz, submitted, timeLeft]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getTimerColor = () => {
+    if (timeLeft > 300) return 'text-success';
+    if (timeLeft > 60) return 'text-accent';
+    return 'text-destructive';
+  };
+
   const handleGenerate = async () => {
     if (!selectedMaterial) { toast.error('Select a material first'); return; }
+    const types = Object.entries(questionTypes).filter(([_, v]) => v).map(([k]) => k);
+    if (types.length === 0) { toast.error('Select at least one question type'); return; }
     setGenerating(true);
     try {
-      const { quiz } = await quizzesApi.generate(selectedMaterial, 10);
+      const { quiz } = await quizzesApi.generate(selectedMaterial, questionCount, customTimer, types);
       setQuizzes(prev => [quiz as ApiQuiz, ...prev]);
-      toast.success('Quiz generated!');
+      toast.success(`Quiz generated! ${questionCount} questions, ${customTimer} minutes`);
       setShowGenerate(false);
       setSelectedMaterial('');
     } catch (err: unknown) {
@@ -51,6 +86,8 @@ export default function Quizzes() {
     try {
       const { quiz } = await quizzesApi.get(quizId);
       setActiveQuestions(quiz.questions);
+      setQuizDuration(quiz.duration);
+      setTimeLeft(quiz.duration * 60);
       setActiveQuiz(quizId);
       setCurrentQ(0);
       setAnswers({});
@@ -61,8 +98,8 @@ export default function Quizzes() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!activeQuiz) return;
+  const handleSubmit = useCallback(async () => {
+    if (!activeQuiz || submitted) return;
     try {
       const { attempt, questions } = await quizzesApi.submit(activeQuiz, answers);
       setResult(attempt);
@@ -72,7 +109,7 @@ export default function Quizzes() {
     } catch {
       toast.error('Failed to submit quiz');
     }
-  };
+  }, [activeQuiz, answers, submitted]);
 
   const questions = activeQuestions;
 
@@ -84,10 +121,19 @@ export default function Quizzes() {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Question {currentQ + 1} of {questions.length}</span>
-            <span className="flex items-center gap-1 text-accent font-medium"><Timer className="h-4 w-4" /> 15:00</span>
+            <span className={`flex items-center gap-1 font-medium ${getTimerColor()} ${timeLeft <= 60 ? 'animate-pulse' : ''}`}>
+              <Timer className="h-4 w-4" /> {formatTime(timeLeft)}
+            </span>
           </div>
           <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
             <div className="h-full gradient-primary rounded-full transition-all" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
+          </div>
+          {/* Timer progress bar */}
+          <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
+            <div 
+              className={`h-full rounded-full transition-all ${timeLeft > 300 ? 'bg-success' : timeLeft > 60 ? 'bg-accent' : 'bg-destructive'}`}
+              style={{ width: `${(timeLeft / (quizDuration * 60)) * 100}%` }} 
+            />
           </div>
         </div>
 
@@ -146,18 +192,30 @@ export default function Quizzes() {
 
         <div className="space-y-3">
           {resultQuestions.map((q) => {
-            const correct = q.isCorrect ?? ((answers[q.id] || '').toLowerCase().trim() === q.correctAnswer.toLowerCase().trim());
+            const correct = q.isCorrect ?? false;
             return (
-              <div key={q.id} className={`bg-card rounded-xl p-4 shadow-card border-l-4 ${correct ? 'border-secondary' : 'border-destructive'}`}>
-                <div className="flex items-start justify-between gap-2 mb-1">
+              <div key={q.id} className={`rounded-xl p-4 shadow-card border-2 ${correct ? 'bg-green-50 border-green-500 dark:bg-green-950/20 dark:border-green-500' : 'bg-red-50 border-red-500 dark:bg-red-950/20 dark:border-red-500'}`}>
+                <div className="flex items-start justify-between gap-2 mb-2">
                   <p className="text-sm font-medium text-foreground">{q.question}</p>
-                  <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${correct ? 'bg-secondary/10 text-secondary' : 'bg-destructive/10 text-destructive'}`}>
-                    {correct ? '✓ Correct' : '✗ Wrong'}
+                  <span className={`shrink-0 text-xs font-bold px-3 py-1 rounded-full ${correct ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+                    {correct ? '✓ CORRECT' : '✗ WRONG'}
                   </span>
                 </div>
-                <p className="text-xs mt-1"><span className="text-muted-foreground">Your answer:</span> <span className={correct ? 'text-secondary' : 'text-destructive'}>{answers[q.id] || '(no answer)'}</span></p>
-                {!correct && <p className="text-xs text-secondary mt-1 font-medium">✓ Correct: {q.correctAnswer}</p>}
-                <p className="text-xs text-muted-foreground mt-2 italic">{q.explanation}</p>
+                <div className="space-y-1">
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Your answer:</span>{' '}
+                    <span className={`font-semibold ${correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {answers[q.id] || '(no answer)'}
+                    </span>
+                  </p>
+                  {!correct && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Correct answer:</span>{' '}
+                      <span className="font-semibold text-green-600 dark:text-green-400">{q.correctAnswer}</span>
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 italic border-t border-border/50 pt-2">{q.explanation}</p>
               </div>
             );
           })}
@@ -183,22 +241,64 @@ export default function Quizzes() {
 
       {showGenerate && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="bg-card rounded-xl p-5 shadow-card space-y-3">
-          <p className="text-sm font-semibold text-foreground">Generate Quiz from Material</p>
+          className="bg-card rounded-xl p-5 shadow-card space-y-4">
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-primary" />
+            <p className="text-sm font-semibold text-foreground">Quiz Settings</p>
+          </div>
           {materials.length === 0 ? (
             <p className="text-sm text-muted-foreground">Upload and process a material first to generate quizzes.</p>
           ) : (
-            <>
+            <div className="space-y-4">
+              {/* Material selection */}
               <select value={selectedMaterial} onChange={e => setSelectedMaterial(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
                 <option value="">Select a material…</option>
                 {materials.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
               </select>
+
+              {/* Question count */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Number of Questions: <span className="text-foreground font-medium">{questionCount}</span></label>
+                <input type="range" min="5" max="30" value={questionCount} onChange={e => setQuestionCount(Number(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>5</span><span>30</span>
+                </div>
+              </div>
+
+              {/* Timer duration */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Time Limit: <span className="text-foreground font-medium">{customTimer} minutes</span></label>
+                <input type="range" min="5" max="60" step="5" value={customTimer} onChange={e => setCustomTimer(Number(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>5 min</span><span>60 min</span>
+                </div>
+              </div>
+
+              {/* Question types */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground">Question Types</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: 'mcq', label: 'Multiple Choice' },
+                    { key: 'tf', label: 'True/False' },
+                    { key: 'short', label: 'Short Answer' },
+                  ].map(({ key, label }) => (
+                    <button key={key} onClick={() => setQuestionTypes(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${questionTypes[key as keyof typeof questionTypes] ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button onClick={handleGenerate} disabled={!selectedMaterial || generating}
                 className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50">
-                {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</> : <><BookOpen className="h-4 w-4" /> Generate 10 Questions</>}
+                {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</> : <><BookOpen className="h-4 w-4" /> Generate {questionCount} Questions</>}
               </button>
-            </>
+            </div>
           )}
         </motion.div>
       )}
