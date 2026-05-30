@@ -4,6 +4,7 @@ import { LayoutDashboard, BookOpen, MessageSquare, User, Library, BarChart3, Bel
 import { useAuth } from '@/lib/auth-context';
 import { remindersApi } from '@/lib/api';
 import { toast } from 'sonner';
+import { ThemeToggle } from '@/lib/theme';
 
 const bottomNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Home' },
@@ -149,7 +150,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-border/50">
+        <div className="p-3 border-t border-border/50 space-y-2">
+          <ThemeToggle className="w-full justify-center" />
           <button onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all">
             <LogOut className="h-5 w-5" /> Logout
@@ -158,7 +160,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 lg:ml-64 pb-20 lg:pb-0">
+      <main className={`min-w-0 flex-1 lg:ml-64 ${location.pathname === '/chat' ? 'pb-0' : 'pb-20'} lg:pb-0`}>
         {children}
       </main>
 
@@ -195,7 +197,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </NavLink>
               ))}
             </div>
-            <div className="mt-1 pt-1 border-t border-border/50">
+            <div className="mt-1 pt-1 border-t border-border/50 space-y-1">
+              <ThemeToggle className="w-full justify-center" />
               <button onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-3 py-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all">
                 <LogOut className="h-4 w-4" /> Logout

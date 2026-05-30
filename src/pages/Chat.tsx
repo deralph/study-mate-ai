@@ -56,9 +56,9 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] lg:h-screen">
+    <div className="flex h-[calc(100dvh-4rem)] max-w-full flex-col overflow-hidden lg:h-screen">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border bg-card flex items-center justify-between shrink-0">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-card px-3 py-3 sm:px-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full gradient-hero flex items-center justify-center">
             <Sparkles className="h-5 w-5 text-primary-foreground" />
@@ -74,7 +74,7 @@ export default function Chat() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 rounded-full gradient-hero flex items-center justify-center mb-4">
@@ -87,9 +87,9 @@ export default function Chat() {
 
         {messages.map((msg) => (
           <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] lg:max-w-[70%] rounded-2xl px-4 py-3 text-sm ${msg.role === 'user' ? 'gradient-primary text-primary-foreground rounded-br-md' : 'bg-card shadow-card text-foreground rounded-bl-md'}`}>
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+            className={`flex min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[92%] overflow-hidden rounded-2xl px-3 py-3 text-sm sm:max-w-[85%] sm:px-4 lg:max-w-[70%] ${msg.role === 'user' ? 'gradient-primary text-primary-foreground rounded-br-md' : 'bg-card shadow-card text-foreground rounded-bl-md'}`}>
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
               {msg.references && msg.references.length > 0 && (
                 <div className="mt-2 flex gap-1 flex-wrap">
                   {msg.references.map((ref) => (
@@ -124,7 +124,7 @@ export default function Chat() {
 
       {/* Quick chips */}
       {messages.length === 0 && (
-        <div className="px-4 pb-2 flex gap-2 overflow-x-auto shrink-0">
+        <div className="flex shrink-0 gap-2 overflow-x-auto px-3 pb-2 sm:px-4">
           {quickChips.map((chip) => (
             <button key={chip.label} onClick={() => setInput(chip.label)}
               className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-sm text-foreground hover:bg-muted transition whitespace-nowrap">
@@ -135,11 +135,11 @@ export default function Chat() {
       )}
 
       {/* Input */}
-      <div className="px-4 py-3 border-t border-border bg-card shrink-0">
-        <div className="flex items-center gap-2 max-w-3xl mx-auto">
+      <div className="shrink-0 border-t border-border bg-card px-3 py-3 sm:px-4">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
           <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask anything about your studies..."
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            className="flex-1 px-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+            className="min-w-0 flex-1 rounded-xl border border-input bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:px-4" />
           <button onClick={sendMessage} disabled={!input.trim() || typing || !sessionId}
             className="p-2.5 rounded-xl gradient-primary text-primary-foreground disabled:opacity-40 transition">
             <Send className="h-5 w-5" />

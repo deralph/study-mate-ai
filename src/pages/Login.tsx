@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Mail, Lock, Eye, EyeOff, ArrowRight, User, GraduationCap, Building, Calendar } from 'lucide-react';
+import { BookOpen, Mail, Lock, Eye, EyeOff, ArrowRight, User, GraduationCap, Building, Calendar, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { authApi } from '@/lib/api';
+import { ThemeToggle } from '@/lib/theme';
 
 const DEPARTMENTS = [
   'Computer Science', 'Mathematics', 'Physics', 'Chemistry', 'Biology',
@@ -15,19 +17,24 @@ const DEPARTMENTS = [
 const YEARS = ['100 Level', '200 Level', '300 Level', '400 Level', '500 Level', 'Postgraduate'];
 
 export default function Login() {
-  const [isRegister, setIsRegister] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [department, setDepartment] = useState('');
   const [year, setYear] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [showResetPass, setShowResetPass] = useState(false);
   const [remember, setRemember] = useState(false);
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const { login, signup } = useAuth();
 
-  const passwordStrength = password.length === 0 ? 0 : password.length < 6 ? 1 : password.length < 10 ? 2 : 3;
+  const isRegister = mode === 'register';
+  const isForgot = mode === 'forgot';
+  const activePassword = isForgot ? resetPassword : password;
+  const passwordStrength = activePassword.length === 0 ? 0 : activePassword.length < 6 ? 1 : activePassword.length < 10 ? 2 : 3;
   const strengthLabels = ['', 'Weak', 'Fair', 'Strong'];
   const strengthColors = ['', 'bg-destructive', 'bg-accent', 'bg-secondary'];
 
@@ -35,6 +42,16 @@ export default function Login() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      if (isForgot) {
+        const normalizedEmail = email.includes('@') ? email : `${email}@aaua.edu.ng`;
+        const { message } = await authApi.forgotPassword(normalizedEmail, resetPassword);
+        toast.success(message);
+        setPassword('');
+        setResetPassword('');
+        setMode('login');
+        return;
+      }
+
       if (isRegister) {
         if (!department || !year) { toast.error('Please fill all fields'); return; }
         await signup({
@@ -64,6 +81,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5 flex items-center justify-center p-4">
+      <div className="fixed right-4 top-4 z-20">
+        <ThemeToggle />
+      </div>
       {/* Decorative blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/10 blur-3xl" />
@@ -83,7 +103,7 @@ export default function Login() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-card/80 backdrop-blur-md rounded-2xl p-6 shadow-elevated border border-border/50 space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">{isRegister ? 'Create Account' : 'Welcome Back'}</h2>
+          <h2 className="text-lg font-semibold text-foreground">{isForgot ? 'Reset Password' : isRegister ? 'Create Account' : 'Welcome Back'}</h2>
 
           <AnimatePresence mode="wait">
             {isRegister && (
@@ -148,42 +168,73 @@ export default function Login() {
           </div>
 
           {/* Password */}
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input type={showPass ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required
-                className={`${inputClass} pl-10 pr-10`} />
-              <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition">
-                {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {isRegister && password.length > 0 && (
-              <div className="flex items-center gap-2 mt-1">
-                <div className="flex-1 flex gap-1">
-                  {[1, 2, 3].map((l) => (
-                    <div key={l} className={`h-1 flex-1 rounded-full transition-all ${passwordStrength >= l ? strengthColors[passwordStrength] : 'bg-muted'}`} />
-                  ))}
-                </div>
-                <span className={`text-xs ${passwordStrength === 3 ? 'text-secondary' : passwordStrength === 2 ? 'text-accent' : 'text-destructive'}`}>
-                  {strengthLabels[passwordStrength]}
-                </span>
+          {!isForgot && (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required
+                  className={`${inputClass} pl-10 pr-10`} />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition">
+                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-            )}
-          </div>
+              {isRegister && password.length > 0 && (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 flex gap-1">
+                    {[1, 2, 3].map((l) => (
+                      <div key={l} className={`h-1 flex-1 rounded-full transition-all ${passwordStrength >= l ? strengthColors[passwordStrength] : 'bg-muted'}`} />
+                    ))}
+                  </div>
+                  <span className={`text-xs ${passwordStrength === 3 ? 'text-secondary' : passwordStrength === 2 ? 'text-accent' : 'text-destructive'}`}>
+                    {strengthLabels[passwordStrength]}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
-          {!isRegister && (
+          {isForgot && (
+            <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Enter your account email and choose a new password.</p>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">New Password</label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input type={showResetPass ? 'text' : 'password'} value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="New password" required minLength={6}
+                    className={`${inputClass} pl-10 pr-10`} />
+                  <button type="button" onClick={() => setShowResetPass(!showResetPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition">
+                    {showResetPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {resetPassword.length > 0 && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 flex gap-1">
+                      {[1, 2, 3].map((l) => (
+                        <div key={l} className={`h-1 flex-1 rounded-full transition-all ${passwordStrength >= l ? strengthColors[passwordStrength] : 'bg-muted'}`} />
+                      ))}
+                    </div>
+                    <span className={`text-xs ${passwordStrength === 3 ? 'text-secondary' : passwordStrength === 2 ? 'text-accent' : 'text-destructive'}`}>
+                      {strengthLabels[passwordStrength]}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isRegister && !isForgot && (
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
                   className="w-4 h-4 rounded border-input text-primary accent-primary" /> Remember me
               </label>
-              <button type="button" className="text-xs text-primary font-medium hover:underline">Forgot password?</button>
+              <button type="button" onClick={() => setMode('forgot')} className="text-xs text-primary font-medium hover:underline">Forgot password?</button>
             </div>
           )}
 
           <button type="submit" disabled={submitting} className="w-full py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated disabled:opacity-60 disabled:cursor-not-allowed">
-            {submitting ? 'Please wait…' : isRegister ? 'Create Account' : 'Sign In'} {!submitting && <ArrowRight className="h-4 w-4" />}
+            {submitting ? 'Please wait…' : isForgot ? 'Reset Password' : isRegister ? 'Create Account' : 'Sign In'} {!submitting && <ArrowRight className="h-4 w-4" />}
           </button>
 
           <div className="relative my-4">
@@ -198,9 +249,9 @@ export default function Login() {
         </form>
 
         <p className="text-center text-sm text-muted-foreground">
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button onClick={() => setIsRegister(!isRegister)} className="text-primary font-medium hover:underline">
-            {isRegister ? 'Sign In' : 'Sign Up'}
+          {isForgot ? 'Remember your password?' : isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button onClick={() => setMode(isForgot || isRegister ? 'login' : 'register')} className="text-primary font-medium hover:underline">
+            {isForgot || isRegister ? 'Sign In' : 'Sign Up'}
           </button>
         </p>
       </motion.div>
