@@ -58,6 +58,23 @@ authRouter.post('/login', async (req, res) => {
   res.json({ token: signToken(user.id), user: publicUser(freshUser) });
 });
 
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().email().toLowerCase(),
+  newPassword: z.string().min(6).max(200),
+});
+
+authRouter.post('/forgot-password', async (req, res) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email and a password with at least 6 characters' });
+  const { email, newPassword } = parsed.data;
+  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
+  if (!user) return res.status(404).json({ error: 'No account found for that email address' });
+  const hash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  res.json({ message: 'Password reset successfully. You can now sign in.' });
+});
+
 authRouter.get('/me', requireAuth, (req: AuthedRequest, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
   res.json({ user: publicUser(user) });
