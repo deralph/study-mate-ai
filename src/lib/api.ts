@@ -59,6 +59,7 @@ export interface ApiMaterial {
   file_size: string;
   status: 'processing' | 'ready' | 'error';
   upload_date: string;
+  file_url?: string;
 }
 
 export interface ProgressStatsResponse {

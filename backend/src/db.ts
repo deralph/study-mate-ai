@@ -205,6 +205,9 @@ CREATE TABLE IF NOT EXISTS materials (
   file_type TEXT NOT NULL,
   file_name TEXT NOT NULL,
   file_path TEXT NOT NULL,
+  file_url TEXT,
+  cloudinary_public_id TEXT,
+  cloudinary_resource_type TEXT,
   file_size TEXT NOT NULL,
   text_content TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'ready',
@@ -341,3 +344,6 @@ CREATE INDEX IF NOT EXISTS idx_exam_plans_user ON exam_plans(user_id);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 try { await db.exec('ALTER TABLE recommendations ADD COLUMN url TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN file_url TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_public_id TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_resource_type TEXT'); } catch {}

@@ -9,7 +9,8 @@ Built with **Express**, local **SQLite** for development, and optional **Neon/Po
 - **SQLite via sql.js** – local development database (single file `data.db`, no setup)
 - **Postgres/Neon via `pg`** – recommended production database when `DATABASE_URL` is set
 - **JWT + bcryptjs** – authentication
-- **multer** – file uploads (stored locally in `uploads/`)
+- **multer** – receives uploads before they are stored locally or sent to Cloudinary
+- **Cloudinary** – recommended production file storage when `CLOUDINARY_*` variables are set
 - **pdf-parse** – extract text from PDF materials for AI context
 - **Google Gemini (`@google/generative-ai`)** – AI for chat, quiz generation, summarizer, study plans, recommendations. **Free tier** at https://aistudio.google.com/apikey (no card needed).
 - **zod, helmet, cors** – validation & basic security
@@ -80,6 +81,28 @@ No Neon key is needed in the app code. The only Neon value this backend needs is
 7. Create a test account, log out, manually redeploy or restart the Render service, then log in again with the same account. If login still works after the restart, the database is using the persistent disk.
 
 To reset a file-backed database, delete the file and restart. To inspect it, use any SQLite viewer (DB Browser for SQLite is free).
+
+
+## Production file uploads with Cloudinary
+
+Neon/Postgres stores the material records, extracted text, quizzes, progress, and other app data. The actual uploaded files need durable object/file storage too. In production, configure Cloudinary so uploaded PDFs, docs, images, and text files are not lost when Render restarts.
+
+1. Create a Cloudinary account at https://cloudinary.com.
+2. In the Cloudinary dashboard, copy these values from **Dashboard / API Keys**: `Cloud name`, `API Key`, and `API Secret`.
+3. In Render backend environment variables, add:
+
+```env
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+CLOUDINARY_FOLDER=study-mate-ai/production
+```
+
+4. Redeploy the backend.
+5. Upload a material from the app. The backend will extract text for AI, upload the original file to Cloudinary, save the Cloudinary URL/public id in the database, and delete the temporary local upload.
+6. Open the material file from the app after a Render restart/redeploy. It should still load from Cloudinary.
+
+If the Cloudinary variables are not set, the backend falls back to local `uploads/` storage. That is fine for local development but not durable on free Render services.
 
 ## Endpoints
 
