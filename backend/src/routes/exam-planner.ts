@@ -16,8 +16,8 @@ if (!fs.existsSync(uploadsDir)) {
 
 // ─── Timetables ──────────────────────────────────────────────────────────────
 
-examPlannerRouter.get('/timetables', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT * FROM timetables WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+examPlannerRouter.get('/timetables', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT * FROM timetables WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ 
     timetables: rows.map(r => ({ 
       id: r.id, title: r.title, type: r.type, 
@@ -27,12 +27,12 @@ examPlannerRouter.get('/timetables', (req: AuthedRequest, res) => {
   });
 });
 
-examPlannerRouter.post('/timetables', (req: AuthedRequest, res) => {
+examPlannerRouter.post('/timetables', async (req: AuthedRequest, res) => {
   // Handle multipart form data manually since we don't have multer
   const chunks: Buffer[] = [];
   
   req.on('data', (chunk: Buffer) => chunks.push(chunk));
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       const data = Buffer.concat(chunks);
       const boundary = req.headers['content-type']?.split('boundary=')[1];
@@ -49,10 +49,10 @@ examPlannerRouter.post('/timetables', (req: AuthedRequest, res) => {
       const content = file.data.toString('utf-8');
       
       const id = uid();
-      db.prepare('INSERT INTO timetables (id, user_id, title, type, content) VALUES (?,?,?,?,?)')
+      await db.prepare('INSERT INTO timetables (id, user_id, title, type, content) VALUES (?,?,?,?,?)')
         .run(id, req.userId!, title, type, content);
       
-      const row = db.prepare('SELECT * FROM timetables WHERE id=?').get(id);
+      const row = await db.prepare('SELECT * FROM timetables WHERE id=?').get(id);
       res.json({ 
         timetable: { 
           id: row.id, title: row.title, type: row.type, 
@@ -66,8 +66,8 @@ examPlannerRouter.post('/timetables', (req: AuthedRequest, res) => {
   });
 });
 
-examPlannerRouter.delete('/timetables/:id', (req: AuthedRequest, res) => {
-  db.prepare('DELETE FROM timetables WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
+examPlannerRouter.delete('/timetables/:id', async (req: AuthedRequest, res) => {
+  await db.prepare('DELETE FROM timetables WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
   res.json({ message: 'Deleted' });
 });
 
@@ -86,8 +86,8 @@ interface StudyDay {
   tasks: StudyTask[];
 }
 
-examPlannerRouter.get('/plans', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT * FROM exam_plans WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+examPlannerRouter.get('/plans', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT * FROM exam_plans WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ 
     plans: rows.map(r => ({ 
       id: r.id, exam_date: r.exam_date, 
@@ -106,7 +106,7 @@ examPlannerRouter.post('/plans', async (req: AuthedRequest, res) => {
   // Fetch timetables
   const timetables: any[] = [];
   for (const id of timetableIds) {
-    const row = db.prepare('SELECT * FROM timetables WHERE id=? AND user_id=?').get(id, req.userId!);
+    const row = await db.prepare('SELECT * FROM timetables WHERE id=? AND user_id=?').get(id, req.userId!);
     if (row) timetables.push(row);
   }
   
@@ -167,7 +167,7 @@ Return STRICT JSON in this exact format:
   }
   
   const id = uid();
-  db.prepare('INSERT INTO exam_plans (id, user_id, exam_date, schedule_json) VALUES (?,?,?,?)')
+  await db.prepare('INSERT INTO exam_plans (id, user_id, exam_date, schedule_json) VALUES (?,?,?,?)')
     .run(id, req.userId!, examDate, JSON.stringify(schedule));
   
   res.json({ 
@@ -178,8 +178,8 @@ Return STRICT JSON in this exact format:
   });
 });
 
-examPlannerRouter.delete('/plans/:id', (req: AuthedRequest, res) => {
-  db.prepare('DELETE FROM exam_plans WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
+examPlannerRouter.delete('/plans/:id', async (req: AuthedRequest, res) => {
+  await db.prepare('DELETE FROM exam_plans WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
   res.json({ message: 'Deleted' });
 });
 

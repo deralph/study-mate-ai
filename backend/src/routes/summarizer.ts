@@ -22,7 +22,7 @@ summarizerRouter.post('/text', async (req: AuthedRequest, res) => {
 });
 
 summarizerRouter.post('/material/:id', async (req: AuthedRequest, res) => {
-  const m: any = db.prepare('SELECT title, text_content FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+  const m: any = await db.prepare('SELECT title, text_content FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!m) return res.status(404).json({ error: 'Not found' });
   if (!m.text_content) return res.status(400).json({ error: 'No extractable text in this material' });
   if (!hasAi()) return res.status(503).json({ error: 'AI not configured' });
@@ -35,7 +35,7 @@ summarizerRouter.post('/material/:id', async (req: AuthedRequest, res) => {
 });
 
 summarizerRouter.post('/material/:id/full', async (req: AuthedRequest, res) => {
-  const m: any = db.prepare('SELECT title, text_content FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+  const m: any = await db.prepare('SELECT title, text_content FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!m) return res.status(404).json({ error: 'Not found' });
   if (!m.text_content) return res.status(400).json({ error: 'No extractable text in this material' });
   if (!hasAi()) return res.status(503).json({ error: 'AI not configured' });

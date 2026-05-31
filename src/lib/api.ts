@@ -1,4 +1,5 @@
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || '/api';
+const configuredBaseUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL) as string | undefined;
+const BASE_URL = configuredBaseUrl?.replace(/\/$/, '') || '/api';
 
 function getToken(): string | null {
   return localStorage.getItem('studymate_token');

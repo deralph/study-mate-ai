@@ -44,14 +44,14 @@ function rowToApi(r: any) {
   };
 }
 
-materialsRouter.get('/', (req: AuthedRequest, res) => {
-  const rows = db.prepare('SELECT * FROM materials WHERE user_id=? ORDER BY upload_date DESC')
+materialsRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows = await db.prepare('SELECT * FROM materials WHERE user_id=? ORDER BY upload_date DESC')
     .all(req.userId!);
   res.json({ materials: rows.map(rowToApi) });
 });
 
-materialsRouter.get('/:id/file', (req: AuthedRequest, res) => {
-  const row: any = db.prepare('SELECT file_path, file_name, file_type FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+materialsRouter.get('/:id/file', async (req: AuthedRequest, res) => {
+  const row: any = await db.prepare('SELECT file_path, file_name, file_type FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: 'File missing on server' });
   res.setHeader('Content-Disposition', `inline; filename="${String(row.file_name).replace(/"/g, '')}"`);
@@ -85,24 +85,24 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
     console.error('Text extraction failed:', e);
   }
 
-  db.prepare(`INSERT INTO materials (id, user_id, title, subject, file_type, file_name, file_path, file_size, text_content, status)
+  await db.prepare(`INSERT INTO materials (id, user_id, title, subject, file_type, file_name, file_path, file_size, text_content, status)
               VALUES (?,?,?,?,?,?,?,?,?,'ready')`)
     .run(id, req.userId!, title, subject || 'General Studies', ext.toUpperCase(), file.originalname, file.path, fmtSize(file.size), textContent);
 
-  const row = db.prepare('SELECT * FROM materials WHERE id=?').get(id);
+  const row = await db.prepare('SELECT * FROM materials WHERE id=?').get(id);
   res.json({ material: rowToApi(row) });
 });
 
-materialsRouter.get('/:id', (req: AuthedRequest, res) => {
-  const row: any = db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+materialsRouter.get('/:id', async (req: AuthedRequest, res) => {
+  const row: any = await db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json({ material: { ...rowToApi(row), text_content: row.text_content } });
 });
 
-materialsRouter.delete('/:id', (req: AuthedRequest, res) => {
-  const row: any = db.prepare('SELECT file_path FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+materialsRouter.delete('/:id', async (req: AuthedRequest, res) => {
+  const row: any = await db.prepare('SELECT file_path FROM materials WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!row) return res.status(404).json({ error: 'Not found' });
   try { fs.unlinkSync(row.file_path); } catch {}
-  db.prepare('DELETE FROM materials WHERE id=?').run(req.params.id);
+  await db.prepare('DELETE FROM materials WHERE id=?').run(req.params.id);
   res.json({ message: 'Deleted' });
 });

@@ -5,8 +5,8 @@ import { requireAuth, type AuthedRequest } from '../auth-middleware.js';
 export const leaderboardRouter = Router();
 leaderboardRouter.use(requireAuth);
 
-leaderboardRouter.get('/', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare(`
+leaderboardRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare(`
     SELECT u.id, u.name, u.department, u.points, u.study_streak AS streak, u.avatar,
       (CAST(u.points / 250 AS INTEGER) + 1) AS level,
       (SELECT COUNT(*) FROM quiz_attempts qa WHERE qa.user_id=u.id) AS quizzes

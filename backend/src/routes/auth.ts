@@ -20,14 +20,14 @@ authRouter.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
   const data = parsed.data;
-  const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(data.email);
+  const exists = await db.prepare('SELECT id FROM users WHERE email = ?').get(data.email);
   if (exists) return res.status(409).json({ error: 'Email already registered' });
   const id = uid();
   const hash = await bcrypt.hash(data.password, 10);
-  db.prepare(`INSERT INTO users (id, name, email, password_hash, department, year, university)
+  await db.prepare(`INSERT INTO users (id, name, email, password_hash, department, year, university)
               VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(id, data.name, data.email, hash, data.department, data.year, data.university);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   res.json({ token: signToken(id), user: publicUser(user) });
 });
 
@@ -40,7 +40,7 @@ authRouter.post('/login', async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid email or password' });
   const { email, password } = parsed.data;
-  const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const user: any = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
@@ -50,11 +50,11 @@ authRouter.post('/login', async (req, res) => {
   if (user.last_active_date === today) {
     // already active today — no change
   } else if (user.last_active_date === yesterday) {
-    db.prepare('UPDATE users SET study_streak = study_streak + 1, last_active_date = ? WHERE id = ?').run(today, user.id);
+    await db.prepare('UPDATE users SET study_streak = study_streak + 1, last_active_date = ? WHERE id = ?').run(today, user.id);
   } else {
-    db.prepare('UPDATE users SET study_streak = 1, last_active_date = ? WHERE id = ?').run(today, user.id);
+    await db.prepare('UPDATE users SET study_streak = 1, last_active_date = ? WHERE id = ?').run(today, user.id);
   }
-  const freshUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const freshUser = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ token: signToken(user.id), user: publicUser(freshUser) });
 });
 
@@ -68,15 +68,15 @@ authRouter.post('/forgot-password', async (req, res) => {
   const parsed = forgotPasswordSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email and a password with at least 6 characters' });
   const { email, newPassword } = parsed.data;
-  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
+  const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
   if (!user) return res.status(404).json({ error: 'No account found for that email address' });
   const hash = await bcrypt.hash(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
   res.json({ message: 'Password reset successfully. You can now sign in.' });
 });
 
-authRouter.get('/me', requireAuth, (req: AuthedRequest, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
+authRouter.get('/me', requireAuth, async (req: AuthedRequest, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
   res.json({ user: publicUser(user) });
 });
 
@@ -86,13 +86,13 @@ const profileSchema = z.object({
   year: z.string().trim().min(1).max(50),
 });
 
-authRouter.put('/profile', requireAuth, (req: AuthedRequest, res) => {
+authRouter.put('/profile', requireAuth, async (req: AuthedRequest, res) => {
   const parsed = profileSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
   const { name, department, year } = parsed.data;
-  db.prepare('UPDATE users SET name=?, department=?, year=? WHERE id=?')
+  await db.prepare('UPDATE users SET name=?, department=?, year=? WHERE id=?')
     .run(name, department, year, req.userId!);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
   res.json({ user: publicUser(user) });
 });
 
@@ -101,15 +101,15 @@ authRouter.put('/change-password', requireAuth, async (req: AuthedRequest, res) 
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 6) {
     return res.status(400).json({ error: 'Invalid input' });
   }
-  const user: any = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId!);
+  const user: any = await db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.userId!);
   const ok = await bcrypt.compare(currentPassword, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
   const hash = await bcrypt.hash(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.userId!);
+  await db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.userId!);
   res.json({ message: 'Password updated' });
 });
 
-authRouter.delete('/account', requireAuth, (req: AuthedRequest, res) => {
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.userId!);
+authRouter.delete('/account', requireAuth, async (req: AuthedRequest, res) => {
+  await db.prepare('DELETE FROM users WHERE id = ?').run(req.userId!);
   res.json({ message: 'Account deleted' });
 });

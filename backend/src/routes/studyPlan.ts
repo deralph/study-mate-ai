@@ -15,13 +15,13 @@ interface PlanDay {
   successSummary?: string;
 }
 
-studyPlanRouter.get('/', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT id, exam_date, subject, created_at FROM study_plans WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+studyPlanRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT id, exam_date, subject, created_at FROM study_plans WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ plans: rows });
 });
 
-studyPlanRouter.get('/:id', (req: AuthedRequest, res) => {
-  const r: any = db.prepare('SELECT * FROM study_plans WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+studyPlanRouter.get('/:id', async (req: AuthedRequest, res) => {
+  const r: any = await db.prepare('SELECT * FROM study_plans WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!r) return res.status(404).json({ error: 'Not found' });
   res.json({ plan: { id: r.id, exam_date: r.exam_date, subject: r.subject, plan: JSON.parse(r.plan_json) } });
 });
@@ -67,8 +67,8 @@ function fallbackPlan(examDate: string, subject: string): PlanDay[] {
 studyPlanRouter.post('/generate', async (req: AuthedRequest, res) => {
   const { examDate } = req.body ?? {};
   if (!examDate) return res.status(400).json({ error: 'examDate required' });
-  const user: any = db.prepare('SELECT department FROM users WHERE id=?').get(req.userId!);
-  const recentMaterial: any = db.prepare('SELECT subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 1').get(req.userId!);
+  const user: any = await db.prepare('SELECT department FROM users WHERE id=?').get(req.userId!);
+  const recentMaterial: any = await db.prepare('SELECT subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 1').get(req.userId!);
   const subject = String(req.body?.subject || recentMaterial?.subject || user?.department || 'General Studies').trim();
 
   let plan: PlanDay[];
@@ -125,9 +125,9 @@ Rules:
   }
 
   const id = uid();
-  db.prepare('INSERT INTO study_plans (id, user_id, exam_date, subject, plan_json) VALUES (?,?,?,?,?)')
+  await db.prepare('INSERT INTO study_plans (id, user_id, exam_date, subject, plan_json) VALUES (?,?,?,?,?)')
     .run(id, req.userId!, examDate, subject, JSON.stringify(plan));
-  db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
+  await db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
     .run(uid(), req.userId!, subject, 10, 'study_plan');
   res.json({ plan: { id, examDate, subject, plan } });
 });
