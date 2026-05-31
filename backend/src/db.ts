@@ -1,108 +1,186 @@
-// SQLite via sql.js (pure-JS WASM build).
-// We wrap sql.js with a tiny better-sqlite3-compatible API so the rest of the
-// codebase keeps using `db.prepare(sql).run/get/all(...args)` unchanged.
+// Database adapter.
 //
-// Persistence: the database lives in memory; after every mutating call we
-// serialize the DB to `data.db` on disk. On startup we load that file if it
-// exists. This is fine for a small student-project workload.
+// Production: set DATABASE_URL to a Neon/Postgres connection string. The backend
+// will use Postgres so data survives Render restarts/redeploys.
+// Local/default fallback: SQLite via sql.js persisted to data.db, so the app can
+// still run without a cloud database during development.
 
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import initSqlJs, { type Database as SqlJsDatabase } from 'sql.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// DB_PATH env var lets Render/Railway users point to a persistent disk.
-// Fallback: store alongside the backend root (outside dist/).
-const dbPath = process.env.DB_PATH || path.resolve(__dirname, '..', 'data.db');
-if (process.env.DB_PATH) {
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  console.log(`[db] Using persistent path: ${dbPath}`);
-}
+type QueryValue = string | number | boolean | Uint8Array | null | undefined;
+type QueryResult = { changes: number };
 
-const SQL = await initSqlJs();
+type Queryable = {
+  prepare(sql: string): {
+    run(...args: QueryValue[]): Promise<QueryResult>;
+    get(...args: QueryValue[]): Promise<any | undefined>;
+    all(...args: QueryValue[]): Promise<any[]>;
+  };
+  exec(sql: string): Promise<void>;
+  pragma(p: string): Promise<void>;
+};
 
-const raw: SqlJsDatabase = fs.existsSync(dbPath)
-  ? new SQL.Database(fs.readFileSync(dbPath))
-  : new SQL.Database();
+const postgresUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+const usingPostgres = Boolean(postgresUrl);
 
-// ─── Persistence ─────────────────────────────────────────────────────────────
-let saveTimer: NodeJS.Timeout | null = null;
-function scheduleSave() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    try {
-      const data = raw.export();
-      fs.writeFileSync(dbPath, Buffer.from(data));
-    } catch (e) {
-      console.error('Failed to persist sql.js database:', e);
-    }
-  }, 50);
-}
-
-// ─── better-sqlite3-compatible wrapper ──────────────────────────────────────
 function flatten(args: any[]): any[] {
   if (args.length === 1 && Array.isArray(args[0])) return args[0];
   return args;
 }
 
-class Statement {
-  constructor(private sql: string) {}
-
-  run(...args: any[]) {
-    const stmt = raw.prepare(this.sql);
-    try {
-      stmt.run(flatten(args));
-    } finally {
-      stmt.free();
-    }
-    scheduleSave();
-    return { changes: raw.getRowsModified() };
-  }
-
-  get(...args: any[]) {
-    const stmt = raw.prepare(this.sql);
-    try {
-      stmt.bind(flatten(args));
-      return stmt.step() ? stmt.getAsObject() : undefined;
-    } finally {
-      stmt.free();
-    }
-  }
-
-  all(...args: any[]) {
-    const stmt = raw.prepare(this.sql);
-    const rows: any[] = [];
-    try {
-      stmt.bind(flatten(args));
-      while (stmt.step()) rows.push(stmt.getAsObject());
-    } finally {
-      stmt.free();
-    }
-    return rows;
-  }
+function toPostgresSql(sql: string): string {
+  let index = 0;
+  return sql
+    .replace(/\?/g, () => `$${++index}`)
+    .replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP')
+    .replace(/date\('now','-13 days'\)/gi, "(CURRENT_DATE - INTERVAL '13 days')")
+    .replace(/date\(created_at\)/gi, '(created_at::date)')
+    .replace(/strftime\('%Y-W%W',\s*completed_at\)/gi, `to_char(completed_at::timestamp, 'IYYY-\"W\"IW')`)
+    .replace(/completed=1/g, 'completed = 1')
+    .replace(/enabled=1/g, 'enabled = 1');
 }
 
-export const db = {
-  prepare(sql: string) {
-    return new Statement(sql);
-  },
-  exec(sql: string) {
-    raw.exec(sql);
-    scheduleSave();
-  },
-  pragma(_p: string) {
-    // no-op: sql.js doesn't support WAL; foreign_keys handled below
-  },
-};
+async function createPostgresDb(): Promise<Queryable> {
+  const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+  const { Pool } = await dynamicImport('pg');
+  const pool = new Pool({
+    connectionString: postgresUrl,
+    ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+  });
 
-// Enable FK enforcement (PRAGMA via run is supported in sql.js)
-raw.run('PRAGMA foreign_keys = ON');
+  console.log('[db] Using Postgres database from DATABASE_URL/POSTGRES_URL/NEON_DATABASE_URL');
+
+  return {
+    prepare(sql: string) {
+      const text = toPostgresSql(sql);
+      return {
+        async run(...args: QueryValue[]) {
+          const result = await pool.query(text, flatten(args));
+          return { changes: result.rowCount ?? 0 };
+        },
+        async get(...args: QueryValue[]) {
+          const result = await pool.query(text, flatten(args));
+          return result.rows[0];
+        },
+        async all(...args: QueryValue[]) {
+          const result = await pool.query(text, flatten(args));
+          return result.rows;
+        },
+      };
+    },
+    async exec(sql: string) {
+      await pool.query(toPostgresSql(sql));
+    },
+    async pragma(_p: string) {
+      // no-op for Postgres
+    },
+  };
+}
+
+async function createSqliteDb(): Promise<Queryable> {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  // DB_PATH env var lets Render/Railway users point to a persistent disk.
+  // Fallback: store alongside the backend root (outside dist/).
+  const dbPath = process.env.DB_PATH || path.resolve(__dirname, '..', 'data.db');
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+  if (process.env.DB_PATH) {
+    console.log(`[db] Using SQLite persistent path: ${dbPath}`);
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn(
+      `[db] DATABASE_URL and DB_PATH are not set; using ${dbPath}. ` +
+        'On hosts with ephemeral filesystems (for example Render without a persistent disk), data will be lost after restarts or redeploys.',
+    );
+  }
+
+  const SQL = await initSqlJs();
+  const raw: SqlJsDatabase = fs.existsSync(dbPath)
+    ? new SQL.Database(fs.readFileSync(dbPath))
+    : new SQL.Database();
+
+  let saveTimer: NodeJS.Timeout | null = null;
+  function scheduleSave() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      try {
+        const data = raw.export();
+        fs.writeFileSync(dbPath, Buffer.from(data));
+      } catch (e) {
+        console.error('Failed to persist sql.js database:', e);
+      }
+    }, 50);
+  }
+
+  function flushSync() {
+    try {
+      fs.writeFileSync(dbPath, Buffer.from(raw.export()));
+    } catch {}
+  }
+
+  process.on('SIGINT', () => { flushSync(); process.exit(0); });
+  process.on('SIGTERM', () => { flushSync(); process.exit(0); });
+  process.on('exit', flushSync);
+
+  raw.run('PRAGMA foreign_keys = ON');
+
+  return {
+    prepare(sql: string) {
+      return {
+        async run(...args: QueryValue[]) {
+          const stmt = raw.prepare(sql);
+          try {
+            stmt.run(flatten(args));
+          } finally {
+            stmt.free();
+          }
+          scheduleSave();
+          return { changes: raw.getRowsModified() };
+        },
+        async get(...args: QueryValue[]) {
+          const stmt = raw.prepare(sql);
+          try {
+            stmt.bind(flatten(args));
+            return stmt.step() ? stmt.getAsObject() : undefined;
+          } finally {
+            stmt.free();
+          }
+        },
+        async all(...args: QueryValue[]) {
+          const stmt = raw.prepare(sql);
+          const rows: any[] = [];
+          try {
+            stmt.bind(flatten(args));
+            while (stmt.step()) rows.push(stmt.getAsObject());
+          } finally {
+            stmt.free();
+          }
+          return rows;
+        },
+      };
+    },
+    async exec(sql: string) {
+      raw.exec(sql);
+      scheduleSave();
+    },
+    async pragma(_p: string) {
+      // no-op: sql.js doesn't support WAL; foreign_keys handled above
+    },
+  };
+}
+
+export const db: Queryable = usingPostgres ? await createPostgresDb() : await createSqliteDb();
+
+const sqliteNow = "datetime('now')";
+const postgresNow = 'CURRENT_TIMESTAMP::text';
+const nowDefault = usingPostgres ? postgresNow : sqliteNow;
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
-db.exec(`
+await db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -116,7 +194,7 @@ CREATE TABLE IF NOT EXISTS users (
   level INTEGER NOT NULL DEFAULT 1,
   points INTEGER NOT NULL DEFAULT 0,
   last_active_date TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS materials (
@@ -127,10 +205,13 @@ CREATE TABLE IF NOT EXISTS materials (
   file_type TEXT NOT NULL,
   file_name TEXT NOT NULL,
   file_path TEXT NOT NULL,
+  file_url TEXT,
+  cloudinary_public_id TEXT,
+  cloudinary_resource_type TEXT,
   file_size TEXT NOT NULL,
   text_content TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'ready',
-  upload_date TEXT NOT NULL DEFAULT (datetime('now'))
+  upload_date TEXT NOT NULL DEFAULT (${nowDefault})
 );
 CREATE INDEX IF NOT EXISTS idx_materials_user ON materials(user_id);
 
@@ -139,8 +220,8 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL DEFAULT 'New chat',
   material_ids TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault}),
+  updated_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -149,7 +230,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   references_json TEXT NOT NULL DEFAULT '[]',
-  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+  timestamp TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS quizzes (
@@ -160,7 +241,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   subject TEXT NOT NULL,
   question_count INTEGER NOT NULL,
   duration INTEGER NOT NULL DEFAULT 10,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS quiz_questions (
@@ -182,7 +263,7 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
   total INTEGER NOT NULL,
   percentage INTEGER NOT NULL,
   answers_json TEXT NOT NULL,
-  completed_at TEXT NOT NULL DEFAULT (datetime('now'))
+  completed_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS reminders (
@@ -193,7 +274,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   recurrence TEXT NOT NULL DEFAULT 'once',
   enabled INTEGER NOT NULL DEFAULT 1,
   condition TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS resources (
@@ -206,7 +287,7 @@ CREATE TABLE IF NOT EXISTS resources (
   duration TEXT,
   rating REAL DEFAULT 0,
   bookmarked INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS recommendations (
@@ -219,7 +300,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
   reason TEXT NOT NULL,
   priority TEXT NOT NULL,
   completed INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS study_plans (
@@ -228,7 +309,7 @@ CREATE TABLE IF NOT EXISTS study_plans (
   exam_date TEXT NOT NULL,
   subject TEXT NOT NULL,
   plan_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS study_sessions (
@@ -238,7 +319,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   duration_minutes INTEGER NOT NULL,
   activity_type TEXT,
   score INTEGER,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 
 CREATE TABLE IF NOT EXISTS timetables (
@@ -247,7 +328,7 @@ CREATE TABLE IF NOT EXISTS timetables (
   title TEXT NOT NULL,
   type TEXT NOT NULL,
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 CREATE INDEX IF NOT EXISTS idx_timetables_user ON timetables(user_id);
 
@@ -256,20 +337,13 @@ CREATE TABLE IF NOT EXISTS exam_plans (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   exam_date TEXT NOT NULL,
   schedule_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (${nowDefault})
 );
 CREATE INDEX IF NOT EXISTS idx_exam_plans_user ON exam_plans(user_id);
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
-try { db.exec('ALTER TABLE recommendations ADD COLUMN url TEXT'); } catch {}
-
-// Flush on shutdown
-function flushSync() {
-  try {
-    fs.writeFileSync(dbPath, Buffer.from(raw.export()));
-  } catch {}
-}
-process.on('SIGINT', () => { flushSync(); process.exit(0); });
-process.on('SIGTERM', () => { flushSync(); process.exit(0); });
-process.on('exit', flushSync);
+try { await db.exec('ALTER TABLE recommendations ADD COLUMN url TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN file_url TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_public_id TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_resource_type TEXT'); } catch {}

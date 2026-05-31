@@ -22,15 +22,15 @@ function rowToApi(r: any) {
   };
 }
 
-recommendationsRouter.get('/', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT * FROM recommendations WHERE user_id=? ORDER BY completed ASC, created_at DESC').all(req.userId!);
+recommendationsRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT * FROM recommendations WHERE user_id=? ORDER BY completed ASC, created_at DESC').all(req.userId!);
   res.json({ recommendations: rows.map(rowToApi) });
 });
 
 recommendationsRouter.post('/generate', async (req: AuthedRequest, res) => {
   const userId = req.userId!;
-  const materials: any[] = db.prepare('SELECT title, subject FROM materials WHERE user_id=? LIMIT 10').all(userId);
-  const weakSubjects: any[] = db.prepare(`
+  const materials: any[] = await db.prepare('SELECT title, subject FROM materials WHERE user_id=? LIMIT 10').all(userId);
+  const weakSubjects: any[] = await db.prepare(`
     SELECT q.subject, AVG(qa.percentage) AS avg
     FROM quiz_attempts qa JOIN quizzes q ON q.id=qa.quiz_id
     WHERE qa.user_id=? GROUP BY q.subject ORDER BY avg ASC LIMIT 3`).all(userId);
@@ -64,12 +64,12 @@ Rules:
   }
 
   // Replace existing
-  db.prepare('DELETE FROM recommendations WHERE user_id=?').run(userId);
-  const ins = db.prepare('INSERT INTO recommendations (id, user_id, topic, subject, estimated_time, difficulty, reason, priority, url) VALUES (?,?,?,?,?,?,?,?,?)');
+  await db.prepare('DELETE FROM recommendations WHERE user_id=?').run(userId);
+  const ins = await db.prepare('INSERT INTO recommendations (id, user_id, topic, subject, estimated_time, difficulty, reason, priority, url) VALUES (?,?,?,?,?,?,?,?,?)');
   for (const r of recs) {
-    ins.run(uid(), userId, r.topic, r.subject, r.estimated_time, r.difficulty, r.reason, r.priority, r.url || null);
+    await ins.run(uid(), userId, r.topic, r.subject, r.estimated_time, r.difficulty, r.reason, r.priority, r.url || null);
   }
-  const rows: any[] = db.prepare('SELECT * FROM recommendations WHERE user_id=? ORDER BY created_at DESC').all(userId);
+  const rows: any[] = await db.prepare('SELECT * FROM recommendations WHERE user_id=? ORDER BY created_at DESC').all(userId);
   res.json({ recommendations: rows.map(rowToApi) });
 });
 
@@ -86,15 +86,15 @@ function defaultRecs(materials: any[]): Rec[] {
   ];
 }
 
-recommendationsRouter.patch('/:id/complete', (req: AuthedRequest, res) => {
-  const r: any = db.prepare('SELECT id FROM recommendations WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+recommendationsRouter.patch('/:id/complete', async (req: AuthedRequest, res) => {
+  const r: any = await db.prepare('SELECT id FROM recommendations WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!r) return res.status(404).json({ error: 'Not found' });
-  db.prepare('UPDATE recommendations SET completed=1 WHERE id=?').run(req.params.id);
-  db.prepare('UPDATE users SET points=points+10 WHERE id=?').run(req.userId!);
-  db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
-  const rec: any = db.prepare('SELECT subject, estimated_time FROM recommendations WHERE id=?').get(req.params.id);
+  await db.prepare('UPDATE recommendations SET completed=1 WHERE id=?').run(req.params.id);
+  await db.prepare('UPDATE users SET points=points+10 WHERE id=?').run(req.userId!);
+  await db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
+  const rec: any = await db.prepare('SELECT subject, estimated_time FROM recommendations WHERE id=?').get(req.params.id);
   const minutes = Math.max(10, Number(String(rec?.estimated_time || '').match(/\d+/)?.[0]) || 20);
-  db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
+  await db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
     .run(uid(), req.userId!, rec?.subject || 'General', minutes, 'recommendation');
   res.json({ message: 'Marked complete' });
 });

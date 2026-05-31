@@ -17,24 +17,24 @@ function rowToApi(r: any) {
   };
 }
 
-resourcesRouter.get('/', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT * FROM resources WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+resourcesRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT * FROM resources WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ resources: rows.map(rowToApi) });
 });
 
-resourcesRouter.post('/', (req: AuthedRequest, res) => {
+resourcesRouter.post('/', async (req: AuthedRequest, res) => {
   const { title, type, subject, url, duration, rating } = req.body ?? {};
   if (!title || !type || !subject || !url) return res.status(400).json({ error: 'title, type, subject, url required' });
   const id = uid();
-  db.prepare('INSERT INTO resources (id, user_id, title, type, subject, url, duration, rating) VALUES (?,?,?,?,?,?,?,?)')
+  await db.prepare('INSERT INTO resources (id, user_id, title, type, subject, url, duration, rating) VALUES (?,?,?,?,?,?,?,?)')
     .run(id, req.userId!, title, type, subject, url, duration || null, Number(rating) || 0);
-  const row = db.prepare('SELECT * FROM resources WHERE id=?').get(id);
+  const row = await db.prepare('SELECT * FROM resources WHERE id=?').get(id);
   res.json({ resource: rowToApi(row) });
 });
 
 resourcesRouter.post('/generate', async (req: AuthedRequest, res) => {
-  const user: any = db.prepare('SELECT name, department, year, university FROM users WHERE id=?').get(req.userId!);
-  const materials: any[] = db.prepare('SELECT title, subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 12').all(req.userId!);
+  const user: any = await db.prepare('SELECT name, department, year, university FROM users WHERE id=?').get(req.userId!);
+  const materials: any[] = await db.prepare('SELECT title, subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 12').all(req.userId!);
   const subjects = [...new Set(materials.map(m => String(m.subject || '').trim()).filter(Boolean))];
 
   let resources: ResourceSeed[];
@@ -61,14 +61,14 @@ Each resource must directly relate to the student's uploaded subjects or departm
     resources = defaultResources(subjects, user?.department);
   }
 
-  db.prepare('DELETE FROM resources WHERE user_id=?').run(req.userId!);
-  const ins = db.prepare('INSERT INTO resources (id, user_id, title, type, subject, url, duration, rating) VALUES (?,?,?,?,?,?,?,?)');
+  await db.prepare('DELETE FROM resources WHERE user_id=?').run(req.userId!);
+  const ins = await db.prepare('INSERT INTO resources (id, user_id, title, type, subject, url, duration, rating) VALUES (?,?,?,?,?,?,?,?)');
   for (const r of resources.slice(0, 10)) {
     const subject = r.subject || subjects[0] || user?.department || 'General Studies';
     const query = encodeURIComponent(`${subject} ${r.title} university study guide`);
-    ins.run(uid(), req.userId!, r.title, r.type || 'Article', subject, r.url || `https://www.google.com/search?q=${query}`, r.duration || '15 min', Number(r.rating) || 4.5);
+    await ins.run(uid(), req.userId!, r.title, r.type || 'Article', subject, r.url || `https://www.google.com/search?q=${query}`, r.duration || '15 min', Number(r.rating) || 4.5);
   }
-  const rows: any[] = db.prepare('SELECT * FROM resources WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+  const rows: any[] = await db.prepare('SELECT * FROM resources WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ resources: rows.map(rowToApi) });
 });
 
@@ -81,15 +81,15 @@ function defaultResources(subjects: string[], department?: string): ResourceSeed
   ]));
 }
 
-resourcesRouter.patch('/:id/bookmark', (req: AuthedRequest, res) => {
-  const r: any = db.prepare('SELECT bookmarked FROM resources WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+resourcesRouter.patch('/:id/bookmark', async (req: AuthedRequest, res) => {
+  const r: any = await db.prepare('SELECT bookmarked FROM resources WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!r) return res.status(404).json({ error: 'Not found' });
   const next = r.bookmarked ? 0 : 1;
-  db.prepare('UPDATE resources SET bookmarked=? WHERE id=?').run(next, req.params.id);
+  await db.prepare('UPDATE resources SET bookmarked=? WHERE id=?').run(next, req.params.id);
   res.json({ bookmarked: !!next });
 });
 
-resourcesRouter.delete('/:id', (req: AuthedRequest, res) => {
-  db.prepare('DELETE FROM resources WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
+resourcesRouter.delete('/:id', async (req: AuthedRequest, res) => {
+  await db.prepare('DELETE FROM resources WHERE id=? AND user_id=?').run(req.params.id, req.userId!);
   res.json({ message: 'Deleted' });
 });

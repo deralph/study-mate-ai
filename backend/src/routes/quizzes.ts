@@ -15,8 +15,8 @@ interface GeneratedQuestion {
   explanation: string;
 }
 
-function quizSummary(q: any, userId: string) {
-  const attempts: any = db.prepare('SELECT COUNT(*) AS c, MAX(percentage) AS best FROM quiz_attempts WHERE quiz_id=? AND user_id=?').get(q.id, userId);
+async function quizSummary(q: any, userId: string) {
+  const attempts: any = await db.prepare('SELECT COUNT(*) AS c, MAX(percentage) AS best FROM quiz_attempts WHERE quiz_id=? AND user_id=?').get(q.id, userId);
   return {
     id: q.id, title: q.title, subject: q.subject,
     question_count: q.question_count, duration: q.duration,
@@ -26,15 +26,15 @@ function quizSummary(q: any, userId: string) {
   };
 }
 
-quizzesRouter.get('/', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT * FROM quizzes WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
-  res.json({ quizzes: rows.map(r => quizSummary(r, req.userId!)) });
+quizzesRouter.get('/', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT * FROM quizzes WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
+  res.json({ quizzes: await Promise.all(rows.map(r => quizSummary(r, req.userId!))) });
 });
 
 quizzesRouter.post('/generate', async (req: AuthedRequest, res) => {
   const { materialId, questionCount = 10, duration = 15, types = ['mcq', 'tf', 'short'] } = req.body ?? {};
   if (!materialId) return res.status(400).json({ error: 'materialId required' });
-  const material: any = db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(materialId, req.userId!);
+  const material: any = await db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(materialId, req.userId!);
   if (!material) return res.status(404).json({ error: 'Material not found' });
 
   const count = Math.max(3, Math.min(30, Number(questionCount) || 10));
@@ -71,16 +71,16 @@ ${(material.text_content || '').slice(0, 12000)}`;
   }
 
   const quizId = uid();
-  db.prepare('INSERT INTO quizzes (id, user_id, material_id, title, subject, question_count, duration) VALUES (?,?,?,?,?,?,?)')
+  await db.prepare('INSERT INTO quizzes (id, user_id, material_id, title, subject, question_count, duration) VALUES (?,?,?,?,?,?,?)')
     .run(quizId, req.userId!, materialId, `${material.title} Quiz`, material.subject, questions.length, timerMinutes);
 
-  const insertQ = db.prepare('INSERT INTO quiz_questions (id, quiz_id, question, type, options_json, correct_answer, explanation, position) VALUES (?,?,?,?,?,?,?,?)');
-  questions.map(normalizeQuestion).forEach((q, i) => {
+  const insertQ = await db.prepare('INSERT INTO quiz_questions (id, quiz_id, question, type, options_json, correct_answer, explanation, position) VALUES (?,?,?,?,?,?,?,?)');
+  for (const [i, q] of questions.map(normalizeQuestion).entries()) {
     const opts = q.options ? q.options : (q.type === 'true-false' ? ['True', 'False'] : null);
-    insertQ.run(uid(), quizId, q.question, q.type, opts ? JSON.stringify(opts) : null, q.correctAnswer, q.explanation || '', i);
-  });
+    await insertQ.run(uid(), quizId, q.question, q.type, opts ? JSON.stringify(opts) : null, q.correctAnswer, q.explanation || '', i);
+  }
 
-  return res.json({ quiz: { ...quizSummary(db.prepare('SELECT * FROM quizzes WHERE id=?').get(quizId), req.userId!), questions: getQuestions(quizId, true) } });
+  return res.json({ quiz: { ...await quizSummary(await db.prepare('SELECT * FROM quizzes WHERE id=?').get(quizId), req.userId!), questions: await getQuestions(quizId, true) } });
 });
 
 function normalizeQuestion(q: GeneratedQuestion): GeneratedQuestion {
@@ -104,8 +104,8 @@ function normalizeQuestion(q: GeneratedQuestion): GeneratedQuestion {
   return q;
 }
 
-function getQuestions(quizId: string, includeAnswers: boolean) {
-  const rows: any[] = db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position ASC').all(quizId);
+async function getQuestions(quizId: string, includeAnswers: boolean) {
+  const rows: any[] = await db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position ASC').all(quizId);
   return rows.map(r => ({
     id: r.id,
     question: r.question,
@@ -116,10 +116,10 @@ function getQuestions(quizId: string, includeAnswers: boolean) {
   }));
 }
 
-quizzesRouter.get('/:id', (req: AuthedRequest, res) => {
-  const q: any = db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+quizzesRouter.get('/:id', async (req: AuthedRequest, res) => {
+  const q: any = await db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!q) return res.status(404).json({ error: 'Not found' });
-  res.json({ quiz: { ...quizSummary(q, req.userId!), questions: getQuestions(q.id, false) } });
+  res.json({ quiz: { ...await quizSummary(q, req.userId!), questions: await getQuestions(q.id, false) } });
 });
 
 // Enhanced answer checking with abbreviation/acronym support
@@ -183,11 +183,11 @@ function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
-quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
-  const q: any = db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
+quizzesRouter.post('/:id/submit', async (req: AuthedRequest, res) => {
+  const q: any = await db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(req.params.id, req.userId!);
   if (!q) return res.status(404).json({ error: 'Not found' });
   const answers: Record<string, string> = req.body?.answers ?? {};
-  const questions: any[] = db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position').all(q.id);
+  const questions: any[] = await db.prepare('SELECT * FROM quiz_questions WHERE quiz_id=? ORDER BY position').all(q.id);
 
   let score = 0;
   const correctMap: Record<string, boolean> = {};
@@ -203,11 +203,11 @@ quizzesRouter.post('/:id/submit', (req: AuthedRequest, res) => {
   const pointsEarned = score * 10;
 
   const attemptId = uid();
-  db.prepare('INSERT INTO quiz_attempts (id, quiz_id, user_id, score, total, percentage, answers_json) VALUES (?,?,?,?,?,?,?)')
+  await db.prepare('INSERT INTO quiz_attempts (id, quiz_id, user_id, score, total, percentage, answers_json) VALUES (?,?,?,?,?,?,?)')
     .run(attemptId, q.id, req.userId!, score, total, percentage, JSON.stringify(answers));
-  db.prepare('UPDATE users SET points = points + ? WHERE id=?').run(pointsEarned, req.userId!);
-  db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
-  db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type, score) VALUES (?,?,?,?,?,?)')
+  await db.prepare('UPDATE users SET points = points + ? WHERE id=?').run(pointsEarned, req.userId!);
+  await db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
+  await db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type, score) VALUES (?,?,?,?,?,?)')
     .run(uid(), req.userId!, q.subject, q.duration, 'quiz', percentage);
 
   res.json({
@@ -238,8 +238,8 @@ function fallbackQuestions(title: string, subject: string, count: number): Gener
   });
 }
 
-quizzesRouter.get('/:id/attempts', (req: AuthedRequest, res) => {
-  const rows: any[] = db.prepare('SELECT id, score, total, percentage, completed_at FROM quiz_attempts WHERE quiz_id=? AND user_id=? ORDER BY completed_at DESC')
+quizzesRouter.get('/:id/attempts', async (req: AuthedRequest, res) => {
+  const rows: any[] = await db.prepare('SELECT id, score, total, percentage, completed_at FROM quiz_attempts WHERE quiz_id=? AND user_id=? ORDER BY completed_at DESC')
     .all(req.params.id, req.userId!);
   res.json({ attempts: rows });
 });
