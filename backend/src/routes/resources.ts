@@ -7,11 +7,12 @@ import { aiJson, hasAi } from '../ai.js';
 export const resourcesRouter = Router();
 resourcesRouter.use(requireAuth);
 
-interface ResourceSeed { title: string; type: string; subject: string; duration: string; rating: number; url?: string }
+interface ResourceSeed { title: string; type: string; subject: string; duration: string; rating: number; url?: string; topic?: string }
 
 function rowToApi(r: any) {
   return {
     id: r.id, title: r.title, type: r.type, subject: r.subject,
+    courseCode: r.course_code || undefined, topic: r.topic || undefined,
     rating: r.rating, duration: r.duration ?? '', url: r.url,
     bookmarked: !!r.bookmarked,
   };
@@ -34,11 +35,41 @@ resourcesRouter.post('/', async (req: AuthedRequest, res) => {
 
 resourcesRouter.post('/generate', async (req: AuthedRequest, res) => {
   const user: any = await db.prepare('SELECT name, department, year, university FROM users WHERE id=?').get(req.userId!);
+  const { courseCode, courseTitle, topics } = req.body ?? {};
+  const isCourseScoped = Boolean(courseCode && courseTitle);
+
   const materials: any[] = await db.prepare('SELECT title, subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 12').all(req.userId!);
   const subjects = [...new Set(materials.map(m => String(m.subject || '').trim()).filter(Boolean))];
 
+  // The exact "subject" tag these new resources will be filed under — used both
+  // for prompting the AI and for scoping which old resources get replaced.
+  const targetSubject = isCourseScoped ? `${courseCode} — ${courseTitle}` : undefined;
+
   let resources: ResourceSeed[];
-  if (hasAi()) {
+  if (isCourseScoped) {
+    if (hasAi()) {
+      try {
+        resources = await aiJson<ResourceSeed[]>(`Create 8 high-quality, diverse study resources for a Faculty of Computing student studying the course "${courseCode}: ${courseTitle}".
+Syllabus topics covered in this course: ${JSON.stringify(topics || [])}.
+Student profile: ${JSON.stringify(user)}
+Return STRICT JSON array only (no markdown, no extra text):
+[{"title":"descriptive resource title mentioning the specific topic","type":"Video|Article|PDF","subject":"${courseCode} — ${courseTitle}","topic":"the specific syllabus topic this resource covers","duration":"15 min","rating":4.8,"url":"REAL_URL"}]
+URL rules (must be real, working URLs):
+- YouTube videos: https://www.youtube.com/results?search_query=ENCODED_QUERY
+- Wikipedia articles: https://en.wikipedia.org/wiki/TOPIC_NAME
+- Khan Academy: https://www.khanacademy.org/search?referer=%2F&page_search_query=ENCODED_QUERY
+- Google Scholar: https://scholar.google.com/scholar?q=ENCODED_QUERY
+- Google search: https://www.google.com/search?q=ENCODED_QUERY
+Mix videos, articles and reference resources, and spread them across the different syllabus topics listed above rather than repeating one topic.
+Every resource's "subject" field must be exactly "${courseCode} — ${courseTitle}".`);
+        if (!Array.isArray(resources) || resources.length === 0) throw new Error('empty');
+      } catch {
+        resources = defaultCourseResources(courseCode, courseTitle, topics || []);
+      }
+    } else {
+      resources = defaultCourseResources(courseCode, courseTitle, topics || []);
+    }
+  } else if (hasAi()) {
     try {
       resources = await aiJson<ResourceSeed[]>(`Create 10 high-quality, diverse study resources for this Nigerian university student.
 Profile: ${JSON.stringify(user)}
@@ -61,16 +92,37 @@ Each resource must directly relate to the student's uploaded subjects or departm
     resources = defaultResources(subjects, user?.department);
   }
 
-  await db.prepare('DELETE FROM resources WHERE user_id=?').run(req.userId!);
-  const ins = await db.prepare('INSERT INTO resources (id, user_id, title, type, subject, url, duration, rating) VALUES (?,?,?,?,?,?,?,?)');
-  for (const r of resources.slice(0, 10)) {
-    const subject = r.subject || subjects[0] || user?.department || 'General Studies';
+  // Non-destructive: only replace resources that were previously generated for
+  // this exact subject/course, so generating for one course never wipes out
+  // resources already generated for other courses or the general profile.
+  if (targetSubject) {
+    await db.prepare('DELETE FROM resources WHERE user_id=? AND subject=?').run(req.userId!, targetSubject);
+  } else {
+    const toReplace = resources.map(r => r.subject).filter(Boolean);
+    for (const subj of new Set(toReplace)) {
+      await db.prepare('DELETE FROM resources WHERE user_id=? AND subject=? AND course_code IS NULL').run(req.userId!, subj);
+    }
+  }
+
+  const ins = await db.prepare('INSERT INTO resources (id, user_id, title, type, subject, course_code, topic, url, duration, rating) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  for (const r of resources.slice(0, isCourseScoped ? 8 : 10)) {
+    const subject = targetSubject || r.subject || subjects[0] || user?.department || 'General Studies';
     const query = encodeURIComponent(`${subject} ${r.title} university study guide`);
-    await ins.run(uid(), req.userId!, r.title, r.type || 'Article', subject, r.url || `https://www.google.com/search?q=${query}`, r.duration || '15 min', Number(r.rating) || 4.5);
+    await ins.run(uid(), req.userId!, r.title, r.type || 'Article', subject, isCourseScoped ? courseCode : null, r.topic || null,
+      r.url || `https://www.google.com/search?q=${query}`, r.duration || '15 min', Number(r.rating) || 4.5);
   }
   const rows: any[] = await db.prepare('SELECT * FROM resources WHERE user_id=? ORDER BY created_at DESC').all(req.userId!);
   res.json({ resources: rows.map(rowToApi) });
 });
+
+function defaultCourseResources(courseCode: string, courseTitle: string, topics: string[]): ResourceSeed[] {
+  const subject = `${courseCode} — ${courseTitle}`;
+  const topicPool = topics.length ? topics : [courseTitle];
+  return topicPool.slice(0, 4).flatMap((topic) => ([
+    { title: `${courseCode}: ${topic} — Full Lecture (YouTube)`, type: 'Video', subject, topic, duration: '20 min', rating: 4.8, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(courseTitle + ' ' + topic + ' lecture')}` },
+    { title: `${topic} — Wikipedia Overview`, type: 'Article', subject, topic, duration: '10 min', rating: 4.6, url: `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(topic)}` },
+  ]));
+}
 
 function defaultResources(subjects: string[], department?: string): ResourceSeed[] {
   const base = subjects.length ? subjects : [department || 'Computer Science', 'Data Structures and Algorithms', 'Cybersecurity Fundamentals'];

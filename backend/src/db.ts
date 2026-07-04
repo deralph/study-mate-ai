@@ -347,3 +347,6 @@ try { await db.exec('ALTER TABLE recommendations ADD COLUMN url TEXT'); } catch 
 try { await db.exec('ALTER TABLE materials ADD COLUMN file_url TEXT'); } catch {}
 try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_public_id TEXT'); } catch {}
 try { await db.exec('ALTER TABLE materials ADD COLUMN cloudinary_resource_type TEXT'); } catch {}
+try { await db.exec('ALTER TABLE materials ADD COLUMN course_code TEXT'); } catch {}
+try { await db.exec('ALTER TABLE resources ADD COLUMN course_code TEXT'); } catch {}
+try { await db.exec('ALTER TABLE resources ADD COLUMN topic TEXT'); } catch {}

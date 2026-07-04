@@ -115,7 +115,7 @@ function fmtSize(bytes: number): string {
 
 function rowToApi(r: any) {
   return {
-    id: r.id, title: r.title, subject: r.subject,
+    id: r.id, title: r.title, subject: r.subject, course_code: r.course_code || undefined,
     file_type: r.file_type, file_name: r.file_name, file_size: r.file_size,
     status: r.status, upload_date: r.upload_date, file_url: r.file_url || undefined,
   };
@@ -138,7 +138,7 @@ materialsRouter.get('/:id/file', async (req: AuthedRequest, res) => {
 
 materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest, res) => {
   const file = req.file;
-  const { title, subject } = req.body ?? {};
+  const { title, subject, courseCode } = req.body ?? {};
   if (!file) return res.status(400).json({ error: 'No file uploaded' });
   if (!title) return res.status(400).json({ error: 'Title required' });
 
@@ -178,9 +178,9 @@ materialsRouter.post('/upload', upload.single('file'), async (req: AuthedRequest
       try { fs.unlinkSync(file.path); } catch {}
     }
 
-    await db.prepare(`INSERT INTO materials (id, user_id, title, subject, file_type, file_name, file_path, file_url, cloudinary_public_id, cloudinary_resource_type, file_size, text_content, status)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'ready')`)
-      .run(id, req.userId!, title, subject || 'General Studies', ext.toUpperCase(), file.originalname, filePath, fileUrl, cloudinaryPublicId, cloudinaryResourceType, fmtSize(file.size), textContent);
+    await db.prepare(`INSERT INTO materials (id, user_id, title, subject, course_code, file_type, file_name, file_path, file_url, cloudinary_public_id, cloudinary_resource_type, file_size, text_content, status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'ready')`)
+      .run(id, req.userId!, title, subject || 'General Studies', courseCode || null, ext.toUpperCase(), file.originalname, filePath, fileUrl, cloudinaryPublicId, cloudinaryResourceType, fmtSize(file.size), textContent);
 
     const row = await db.prepare('SELECT * FROM materials WHERE id=?').get(id);
     res.json({ material: rowToApi(row) });
