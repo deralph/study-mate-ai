@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X, Sparkles, MessageCircle, BookOpen, HelpCircle, Send } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X, Sparkles, MessageCircle, BookOpen, HelpCircle, Send, ChevronDown, Wand2 } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { materialsApi, summarizerApi, chatApi, quizzesApi, type ApiMaterial } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { getDepartment, levelFromYearLabel, searchCourses, type Course, type LevelNum } from '@/lib/course-data';
+import { getDepartment, levelFromYearLabel, getCoursesForDept, dedupeCourses, searchCourses, type Course, type LevelNum } from '@/lib/course-data';
 
 const fileTypeColors: Record<string, string> = {
   pdf: 'bg-destructive/10 text-destructive',
@@ -23,11 +23,23 @@ const AI_TABS = [
   { key: 'chat' as const, label: 'Chat', icon: MessageCircle },
 ];
 
+interface IncomingCourseState {
+  filterCourseCode?: string;
+  filterCourseTitle?: string;
+}
+
 export default function Materials() {
   const { user } = useAuth();
   const dept = user ? getDepartment(user.department) : undefined;
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // ─── Course lookup panel (syllabus explorer) ───────────────────────────
   const [courseLevel, setCourseLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
   const [courseQuery, setCourseQuery] = useState('');
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const lookupRef = useRef<HTMLDivElement>(null);
+
   const [materials, setMaterials] = useState<ApiMaterial[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
@@ -35,14 +47,21 @@ export default function Materials() {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadSubject, setUploadSubject] = useState('');
+
+  // ─── Upload course dropdown (replaces free-text subject input) ────────
+  const [uploadLevel, setUploadLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
+  const [uploadCourse, setUploadCourse] = useState<Course | null>(null);
+  const [courseDropdownOpen, setCourseDropdownOpen] = useState(false);
+  const courseDropdownRef = useRef<HTMLDivElement>(null);
+  const uploadCourseOptions = dedupeCourses(getCoursesForDept(dept?.id || '', uploadLevel))
+    .sort((a, b) => a.code.localeCompare(b.code));
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [viewing, setViewing] = useState<(ApiMaterial & { text_content?: string }) | null>(null);
   const [fileUrl, setFileUrl] = useState('');
   const [opening, setOpening] = useState<string | null>(null);
   const [generatingQuiz, setGeneratingQuiz] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
 
   const [aiTab, setAiTab] = useState<'summary' | 'questions' | 'chat'>('summary');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -56,6 +75,30 @@ export default function Materials() {
 
   useEffect(() => {
     materialsApi.list().then(d => setMaterials(d.materials)).catch(() => toast.error('Failed to load materials'));
+  }, []);
+
+  // Arrived here from "Study this course" on Recommendations — pre-filter to that course.
+  useEffect(() => {
+    const state = location.state as IncomingCourseState | null;
+    if (state?.filterCourseCode) {
+      setSearch(state.filterCourseTitle || state.filterCourseCode);
+      toast.info(`Showing materials for ${state.filterCourseCode}${state.filterCourseTitle ? ' — ' + state.filterCourseTitle : ''}`);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
+
+  // Close the "look up a course" results the moment the user clicks anywhere outside it.
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (lookupRef.current && !lookupRef.current.contains(e.target as Node)) {
+        setLookupOpen(false);
+      }
+      if (courseDropdownRef.current && !courseDropdownRef.current.contains(e.target as Node)) {
+        setCourseDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
   useEffect(() => {
@@ -87,15 +130,17 @@ export default function Materials() {
 
   const handleUpload = async () => {
     if (!selectedFile) { toast.error('Please select a file'); return; }
+    if (!uploadCourse) { toast.error('Select the course this material belongs to'); return; }
     setUploading(true);
     try {
-      const { material } = await materialsApi.upload(selectedFile, uploadTitle || selectedFile.name, uploadSubject);
+      const subjectLabel = `${uploadCourse.code} — ${uploadCourse.title}`;
+      const { material } = await materialsApi.upload(selectedFile, uploadTitle || selectedFile.name, subjectLabel, uploadCourse.code);
       setMaterials(prev => [material, ...prev]);
-      toast.success('Material uploaded! Processing…');
+      toast.success(`Material uploaded to ${uploadCourse.code}! Processing…`);
       setShowUpload(false);
       setSelectedFile(null);
       setUploadTitle('');
-      setUploadSubject('');
+      setUploadCourse(null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -203,21 +248,54 @@ export default function Materials() {
               Browse Files
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input type="text" placeholder="Title (optional)" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)}
               className="px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-            <input type="text" placeholder="Subject (optional)" value={uploadSubject} onChange={e => setUploadSubject(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+
+            {/* Course dropdown — replaces the old free-text subject field */}
+            <div className="relative" ref={courseDropdownRef}>
+              <button type="button" onClick={() => setCourseDropdownOpen(v => !v)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm text-left focus:outline-none focus:ring-2 focus:ring-ring">
+                <span className={uploadCourse ? 'text-foreground truncate' : 'text-muted-foreground'}>
+                  {uploadCourse ? `${uploadCourse.code} — ${uploadCourse.title}` : 'Select course *'}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${courseDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {courseDropdownOpen && (
+                <div className="absolute z-20 mt-1 w-full bg-card border border-border rounded-lg shadow-float overflow-hidden">
+                  <div className="p-2 border-b border-border flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground shrink-0">Level</span>
+                    <select value={uploadLevel} onChange={e => { setUploadLevel(Number(e.target.value) as LevelNum); setUploadCourse(null); }}
+                      className="text-xs rounded-md border border-input bg-background px-2 py-1 flex-1">
+                      {[100, 200, 300, 400].map(l => <option key={l} value={l}>{l} Level</option>)}
+                    </select>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {uploadCourseOptions.length === 0 ? (
+                      <p className="text-xs text-muted-foreground p-3">No {uploadLevel} Level courses found for {dept?.name || 'your department'}.</p>
+                    ) : (
+                      uploadCourseOptions.map(c => (
+                        <button key={c.code} type="button" onClick={() => { setUploadCourse(c); setCourseDropdownOpen(false); }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition ${uploadCourse?.code === c.code ? 'bg-primary/10 text-primary' : 'text-foreground'}`}>
+                          <span className="font-medium">{c.code}</span> — {c.title}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <button onClick={handleUpload} disabled={!selectedFile || uploading}
+          <button onClick={handleUpload} disabled={!selectedFile || uploading || !uploadCourse}
             className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50">
             {uploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : <><Upload className="h-4 w-4" /> Upload Material</>}
           </button>
+          {!uploadCourse && <p className="text-xs text-muted-foreground text-center">Pick the exact course this material belongs to — it's how the app knows which syllabus topics it covers.</p>}
         </motion.div>
       )}
 
       {/* Course code lookup — scoped to this student's department & level only */}
-      <div className="bg-card rounded-2xl p-4 shadow-card space-y-3 border border-border/50">
+      <div ref={lookupRef} className="bg-card rounded-2xl p-4 shadow-card space-y-3 border border-border/50">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-sm font-semibold text-foreground">Look up a course code</p>
           <select value={courseLevel} onChange={e => setCourseLevel(Number(e.target.value) as LevelNum)}
@@ -227,10 +305,12 @@ export default function Materials() {
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input type="text" placeholder="e.g. CSC 301, CYB 405, cryptography…" value={courseQuery} onChange={(e) => setCourseQuery(e.target.value)}
+          <input type="text" placeholder="e.g. CSC 301, CYB 405, cryptography…" value={courseQuery}
+            onFocus={() => setLookupOpen(true)}
+            onChange={(e) => { setCourseQuery(e.target.value); setLookupOpen(true); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
         </div>
-        {courseQuery.trim() && (
+        {lookupOpen && courseQuery.trim() && (
           courseResults.length === 0 ? (
             <p className="text-xs text-muted-foreground">No {courseLevel} Level course in {dept?.name || 'your department'} matches "{courseQuery}". Try switching the level above.</p>
           ) : (
@@ -243,8 +323,14 @@ export default function Materials() {
                       {c.topics.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-background text-muted-foreground border border-border/60">{t}</span>)}
                     </div>
                   )}
-                  <button onClick={() => setSearch(c.title.split(' ')[0])}
-                    className="text-xs text-primary mt-2 hover:underline">Filter your uploaded materials for this course</button>
+                  <div className="flex items-center gap-3 mt-2">
+                    <button onClick={() => { setSearch(c.code); setLookupOpen(false); }}
+                      className="text-xs text-primary hover:underline">Filter your uploaded materials for this course</button>
+                    <button onClick={() => navigate('/resources', { state: { course: { code: c.code, title: c.title, topics: c.topics } } })}
+                      className="text-xs text-secondary hover:underline flex items-center gap-1">
+                      <Wand2 className="h-3 w-3" /> Generate resources instead
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -311,10 +397,21 @@ export default function Materials() {
       </div>
 
       {filtered.length === 0 && (
-        <div className="text-center py-16">
-          <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+        <div className="text-center py-16 space-y-3">
+          <FileText className="h-16 w-16 mx-auto text-muted-foreground/30 mb-1" />
           <p className="text-foreground font-medium">No materials found</p>
-          <p className="text-sm text-muted-foreground mt-1">Upload your first study material to get started</p>
+          <p className="text-sm text-muted-foreground">
+            {search.trim() ? `Nothing uploaded yet for "${search}".` : 'Upload your first study material to get started.'}
+          </p>
+          {search.trim() && (() => {
+            const matchedCourse = searchCourses(search, dept?.id, uploadLevel)[0] || searchCourses(search)[0];
+            return matchedCourse ? (
+              <button onClick={() => navigate('/resources', { state: { course: { code: matchedCourse.code, title: matchedCourse.title, topics: matchedCourse.topics } } })}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg gradient-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition">
+                <Wand2 className="h-4 w-4" /> No material yet — generate resources for {matchedCourse.code}
+              </button>
+            ) : null;
+          })()}
         </div>
       )}
 

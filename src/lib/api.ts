@@ -54,6 +54,7 @@ export interface ApiMaterial {
   id: string;
   title: string;
   subject: string;
+  course_code?: string;
   file_type: string;
   file_name: string;
   file_size: string;
@@ -117,6 +118,8 @@ export interface ApiResource {
   title: string;
   type: string;
   subject: string;
+  courseCode?: string;
+  topic?: string;
   rating: number;
   duration: string;
   url: string;
@@ -171,11 +174,12 @@ export const materialsApi = {
     return res.blob();
   },
 
-  upload: (file: File, title: string, subject: string) => {
+  upload: (file: File, title: string, subject: string, courseCode?: string) => {
     const form = new FormData();
     form.append('file', file);
     form.append('title', title);
     form.append('subject', subject);
+    if (courseCode) form.append('courseCode', courseCode);
     return request<{ material: ApiMaterial }>('/materials/upload', { method: 'POST', body: form });
   },
 
@@ -245,7 +249,8 @@ export const remindersApi = {
 export const resourcesApi = {
   list: () => get<{ resources: ApiResource[] }>('/resources'),
 
-  generate: () => post<{ resources: ApiResource[] }>('/resources/generate'),
+  generate: (course?: { code: string; title: string; topics?: string[] }) =>
+    post<{ resources: ApiResource[] }>('/resources/generate', course ? { courseCode: course.code, courseTitle: course.title, topics: course.topics } : {}),
 
   create: (data: { title: string; type: string; subject: string; url: string; duration?: string; rating?: number }) =>
     post<{ resource: ApiResource }>('/resources', data),
