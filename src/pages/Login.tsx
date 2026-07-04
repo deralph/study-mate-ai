@@ -6,15 +6,12 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
 import { authApi } from '@/lib/api';
 import { ThemeToggle } from '@/lib/theme';
+import { DEPARTMENTS as FACULTY_DEPARTMENTS, LEVELS } from '@/lib/course-data';
 
-const DEPARTMENTS = [
-  'Computer Science', 'Mathematics', 'Physics', 'Chemistry', 'Biology',
-  'Biochemistry', 'Microbiology', 'Economics', 'Accounting', 'Business Administration',
-  'English', 'History', 'Political Science', 'Law', 'Education',
-  'Engineering', 'Mass Communication', 'Sociology', 'Philosophy',
-];
-
-const YEARS = ['100 Level', '200 Level', '300 Level', '400 Level', '500 Level', 'Postgraduate'];
+// Study Mate AI is scoped to the Faculty of Computing only — the department
+// list is pulled straight from the faculty's course catalog/syllabus.
+const DEPARTMENTS = FACULTY_DEPARTMENTS.map(d => d.name);
+const YEARS = LEVELS.map(l => `${l} Level`);
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -98,7 +95,7 @@ export default function Login() {
             <BookOpen className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Study Mate AI</h1>
-          <p className="text-sm text-muted-foreground mt-1">Your AI-powered study companion · AAUA</p>
+          <p className="text-sm text-muted-foreground mt-1">Your AI-powered study companion · AAUA Faculty of Computing</p>
         </div>
 
         {/* Form */}

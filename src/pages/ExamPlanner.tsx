@@ -1,93 +1,170 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { CalendarCheck, Upload, FileText, Trash2, Sparkles, Clock, BookOpen, Loader2, Download } from 'lucide-react';
-import { examPlannerApi, type ApiExamPlan, type ApiTimetable } from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  CalendarCheck, Plus, Trash2, Sparkles, Clock, BookOpen, AlertTriangle, Flame, Gauge,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/lib/auth-context';
+import { getDepartment, levelFromYearLabel, searchCourses, type LevelNum } from '@/lib/course-data';
+
+interface ExamItem {
+  id: string;
+  code: string;
+  title: string;
+  examDate: string; // ISO yyyy-mm-dd
+  difficulty: number; // 1 (easy) - 5 (very hard)
+  coverage: number; // 0-100, % of syllabus already covered
+}
+
+interface DayTask {
+  code: string;
+  title: string;
+  minutes: number;
+  reason: string;
+}
+
+interface DayPlan {
+  date: string;
+  dayLabel: string;
+  daysToExamOf?: string;
+  tasks: DayTask[];
+}
+
+const STORAGE_PREFIX = 'studymate_exam_items_';
+const HOURS_PREFIX = 'studymate_daily_hours_';
+
+function todayISO() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function daysBetween(a: string, b: string) {
+  const ms = new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime();
+  return Math.round(ms / 86400000);
+}
+
+/**
+ * Priority score: higher = study this course sooner / more.
+ * Weighs how close the exam is, how hard the student rated it, and how much
+ * syllabus is still uncovered — so a hard, soon, poorly-covered course always
+ * floats to the top, while an easy course far away with good coverage sinks.
+ */
+function priorityScore(item: ExamItem, from: string) {
+  const days = Math.max(0, daysBetween(from, item.examDate));
+  const urgency = 1 / (1 + days); // approaches 1 as exam nears, ~0 far away
+  const difficultyNorm = item.difficulty / 5;
+  const remaining = (100 - item.coverage) / 100;
+  const score = urgency * 45 + difficultyNorm * 30 + remaining * 25;
+  return { score: Math.round(score * 10) / 10, days, urgency, difficultyNorm, remaining };
+}
+
+function levelOfUrgency(days: number) {
+  if (days <= 2) return { label: 'Critical', color: 'text-destructive', bg: 'bg-destructive/10' };
+  if (days <= 5) return { label: 'High', color: 'text-accent', bg: 'bg-accent/10' };
+  if (days <= 10) return { label: 'Moderate', color: 'text-secondary', bg: 'bg-secondary/10' };
+  return { label: 'Low', color: 'text-muted-foreground', bg: 'bg-muted' };
+}
 
 export default function ExamPlanner() {
-  const [plans, setPlans] = useState<ApiExamPlan[]>([]);
-  const [timetables, setTimetables] = useState<ApiTimetable[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [showGenerate, setShowGenerate] = useState(false);
-  const [uploadType, setUploadType] = useState<'school' | 'exam'>('school');
-  const [title, setTitle] = useState('');
-  const [selectedTimetables, setSelectedTimetables] = useState<string[]>([]);
-  const [generating, setGenerating] = useState(false);
+  const { user } = useAuth();
+  const dept = user ? getDepartment(user.department) : undefined;
+  const [level, setLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
+  const storageKey = STORAGE_PREFIX + (user?.id || 'guest');
+  const hoursKey = HOURS_PREFIX + (user?.id || 'guest');
+
+  const [items, setItems] = useState<ExamItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch { return []; }
+  });
+  const [dailyHours, setDailyHours] = useState<number>(() => {
+    const v = Number(localStorage.getItem(hoursKey));
+    return v > 0 ? v : 4;
+  });
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [codeQuery, setCodeQuery] = useState('');
   const [examDate, setExamDate] = useState('');
+  const [difficulty, setDifficulty] = useState(3);
+  const [coverage, setCoverage] = useState(0);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { localStorage.setItem(storageKey, JSON.stringify(items)); }, [items, storageKey]);
+  useEffect(() => { localStorage.setItem(hoursKey, String(dailyHours)); }, [dailyHours, hoursKey]);
 
-  const loadData = async () => {
-    try {
-      const [plansRes, timetablesRes] = await Promise.all([
-        examPlannerApi.listPlans(),
-        examPlannerApi.listTimetables()
-      ]);
-      setPlans(plansRes.plans);
-      setTimetables(timetablesRes.timetables);
-    } catch {
-      toast.error('Failed to load exam plans');
+  const courseMatches = codeQuery.trim() ? searchCourses(codeQuery, dept?.id, level).slice(0, 6) : [];
+
+  const addItem = (code: string, title: string) => {
+    if (!examDate) { toast.error('Pick an exam date first'); return; }
+    if (items.some(i => i.code === code)) { toast.error('That course is already in your plan'); return; }
+    setItems(prev => [...prev, { id: `${Date.now()}`, code, title, examDate, difficulty, coverage }]);
+    toast.success(`${code} added to your exam plan`);
+    setCodeQuery(''); setExamDate(''); setDifficulty(3); setCoverage(0); setShowAdd(false);
+  };
+
+  const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id));
+
+  const today = todayISO();
+  const upcoming = useMemo(
+    () => items.filter(i => i.examDate >= today).sort((a, b) => a.examDate.localeCompare(b.examDate)),
+    [items, today]
+  );
+
+  const ranked = useMemo(
+    () => upcoming
+      .map(i => ({ item: i, ...priorityScore(i, today) }))
+      .sort((a, b) => b.score - a.score),
+    [upcoming, today]
+  );
+
+  // ─── Build a realistic day-by-day plan from today to the last exam ──────
+  const plan: DayPlan[] = useMemo(() => {
+    if (upcoming.length === 0) return [];
+    const lastExam = upcoming.reduce((max, i) => (i.examDate > max ? i.examDate : max), upcoming[0].examDate);
+    const totalDays = Math.max(1, daysBetween(today, lastExam) + 1);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days: DayPlan[] = [];
+
+    for (let d = 0; d < totalDays; d++) {
+      const date = new Date(today + 'T00:00:00');
+      date.setDate(date.getDate() + d);
+      const dateISO = date.toISOString().split('T')[0];
+
+      // Courses whose exam hasn't happened yet as of this day
+      const active = upcoming.filter(i => i.examDate >= dateISO);
+      if (active.length === 0) { days.push({ date: dateISO, dayLabel: dayNames[date.getDay()], tasks: [] }); continue; }
+
+      const scored = active.map(i => ({ item: i, ...priorityScore(i, dateISO) }));
+      const totalScore = scored.reduce((s, x) => s + x.score, 0) || 1;
+      const budget = dailyHours * 60;
+
+      // Allocate minutes proportional to priority score; give every active
+      // course at least a 15-min touch so nothing gets fully dropped.
+      const tasks: DayTask[] = scored
+        .sort((a, b) => b.score - a.score)
+        .map(x => {
+          let minutes = Math.round((x.score / totalScore) * budget);
+          minutes = Math.max(15, Math.min(minutes, budget));
+          const urgencyInfo = levelOfUrgency(x.days);
+          const reason = x.days === 0
+            ? 'Exam is TODAY — final review'
+            : x.days <= 2
+            ? `Exam in ${x.days} day${x.days === 1 ? '' : 's'} — top priority`
+            : x.difficultyNorm >= 0.6
+            ? 'Rated hard — needs more repetition'
+            : x.remaining >= 0.5
+            ? 'Syllabus coverage still low'
+            : `${urgencyInfo.label} priority`;
+          return { code: x.item.code, title: x.item.title, minutes, reason };
+        });
+
+      // Trim proportionally if total exceeds the daily budget (rounding overflow)
+      const allocated = tasks.reduce((s, t) => s + t.minutes, 0);
+      if (allocated > budget) {
+        const factor = budget / allocated;
+        tasks.forEach(t => { t.minutes = Math.max(10, Math.round(t.minutes * factor)); });
+      }
+
+      days.push({ date: dateISO, dayLabel: dayNames[date.getDay()], tasks });
     }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!title.trim()) { toast.error('Enter a title for this timetable'); return; }
-    
-    setLoading(true);
-    try {
-      const { timetable } = await examPlannerApi.uploadTimetable(file, title, uploadType);
-      setTimetables(prev => [timetable, ...prev]);
-      toast.success(`${uploadType === 'school' ? 'School' : 'Exam'} timetable uploaded!`);
-      setShowUpload(false);
-      setTitle('');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const deleteTimetable = async (id: string) => {
-    if (!confirm('Delete this timetable?')) return;
-    try {
-      await examPlannerApi.deleteTimetable(id);
-      setTimetables(prev => prev.filter(t => t.id !== id));
-      toast.success('Timetable deleted');
-    } catch { toast.error('Failed to delete'); }
-  };
-
-  const generatePlan = async () => {
-    if (selectedTimetables.length === 0) { toast.error('Select at least one timetable'); return; }
-    if (!examDate) { toast.error('Select your exam period start date'); return; }
-    
-    setGenerating(true);
-    try {
-      const { plan } = await examPlannerApi.generatePlan(selectedTimetables, examDate);
-      setPlans(prev => [plan, ...prev]);
-      toast.success('AI Study Plan generated!');
-      setShowGenerate(false);
-      setSelectedTimetables([]);
-      setExamDate('');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Generation failed');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const deletePlan = async (id: string) => {
-    if (!confirm('Delete this study plan?')) return;
-    try {
-      await examPlannerApi.deletePlan(id);
-      setPlans(prev => prev.filter(p => p.id !== id));
-      toast.success('Plan deleted');
-    } catch { toast.error('Failed to delete'); }
-  };
+    return days;
+  }, [upcoming, today, dailyHours]);
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
@@ -97,158 +174,149 @@ export default function ExamPlanner() {
             <CalendarCheck className="h-6 w-6 text-primary" /> Exam Planner
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload your timetables and let AI create your study schedule
+            Add every course on your exam timetable — the planner prioritizes what's hardest, closest, and least covered.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowUpload(!showUpload)}
+        <div className="flex items-center gap-2">
+          <select value={level} onChange={e => setLevel(Number(e.target.value) as LevelNum)}
+            className="text-sm rounded-lg border border-input bg-background px-2 py-2">
+            {[100, 200, 300, 400].map(l => <option key={l} value={l}>{l} Level</option>)}
+          </select>
+          <button onClick={() => setShowAdd(v => !v)}
             className="gradient-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition">
-            <Upload className="h-4 w-4" /> Upload Timetable
-          </button>
-          <button onClick={() => setShowGenerate(!showGenerate)} disabled={timetables.length === 0}
-            className="bg-secondary text-secondary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition disabled:opacity-50">
-            <Sparkles className="h-4 w-4" /> AI Plan
+            <Plus className="h-4 w-4" /> Add Exam
           </button>
         </div>
       </div>
 
-      {/* Upload Form */}
-      {showUpload && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="bg-card rounded-xl p-5 shadow-card space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Upload Timetable</h3>
-          <div className="flex gap-2">
-            <button onClick={() => setUploadType('school')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${uploadType === 'school' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              School Timetable
-            </button>
-            <button onClick={() => setUploadType('exam')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${uploadType === 'exam' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              Exam Timetable
-            </button>
-          </div>
-          <input type="text" placeholder="e.g., 2nd Semester 2025" value={title} onChange={e => setTitle(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          <div className="border-2 border-dashed border-border rounded-xl p-8 text-center">
-            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.txt" onChange={handleFileUpload} disabled={loading}
-              className="hidden" id="timetable-upload" />
-            <label htmlFor="timetable-upload" className="cursor-pointer block">
-              <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">Click to upload PDF, image, or text file</p>
-            </label>
-          </div>
-          {loading && <p className="text-sm text-center text-muted-foreground"><Loader2 className="h-4 w-4 inline animate-spin mr-1" /> Processing...</p>}
-        </motion.div>
-      )}
-
-      {/* Generate Plan Form */}
-      {showGenerate && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="bg-card rounded-xl p-5 shadow-card space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Generate AI Study Plan</h3>
-          <p className="text-xs text-muted-foreground">Select timetables and exam start date</p>
-          
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {timetables.map(t => (
-              <label key={t.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer">
-                <input type="checkbox" checked={selectedTimetables.includes(t.id)}
-                  onChange={e => {
-                    setSelectedTimetables(prev => 
-                      e.target.checked ? [...prev, t.id] : prev.filter(id => id !== t.id)
-                    );
-                  }}
-                  className="w-4 h-4 rounded border-border" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">{t.title}</p>
-                  <p className="text-xs text-muted-foreground">{t.type === 'school' ? 'School' : 'Exam'} Timetable</p>
+      {/* Add exam form */}
+      <AnimatePresence>
+        {showAdd && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="bg-card rounded-xl p-5 shadow-card space-y-4 overflow-hidden">
+            <div className="relative">
+              <input type="text" value={codeQuery} onChange={e => setCodeQuery(e.target.value)}
+                placeholder={`Search a ${dept?.name || 'faculty'} course code (e.g. CSC 301)…`}
+                className="w-full px-3 py-2.5 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              {courseMatches.length > 0 && (
+                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {courseMatches.map(c => (
+                    <button key={c.code} onClick={() => addItem(c.code, c.title)}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-muted/50 hover:bg-muted text-sm transition">
+                      <span className="font-medium text-foreground">{c.code}</span> — {c.title}
+                    </button>
+                  ))}
                 </div>
-              </label>
-            ))}
-          </div>
-          
-          <input type="date" value={examDate} onChange={e => setExamDate(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          
-          <button onClick={generatePlan} disabled={generating || selectedTimetables.length === 0 || !examDate}
-            className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50">
-            {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : <><Sparkles className="h-4 w-4" /> Generate Study Plan</>}
-          </button>
-        </motion.div>
-      )}
+              )}
+              {codeQuery.trim() && courseMatches.length === 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground flex-1">Not found in the {level} Level catalog. Add it anyway as a custom course:</p>
+                  <button onClick={() => addItem(codeQuery.trim().toUpperCase(), codeQuery.trim())}
+                    className="text-xs px-2 py-1 rounded-lg bg-primary/10 text-primary font-medium hover:bg-primary/20">Add "{codeQuery.trim()}"</button>
+                </div>
+              )}
+            </div>
 
-      {/* Timetables List */}
-      {timetables.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Exam date</label>
+                <input type="date" value={examDate} min={today} onChange={e => setExamDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Difficulty for you (1 easy – 5 very hard)</label>
+                <input type="range" min={1} max={5} value={difficulty} onChange={e => setDifficulty(Number(e.target.value))} className="w-full" />
+                <p className="text-xs text-center text-foreground font-medium">{difficulty}</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Syllabus already covered (%)</label>
+                <input type="range" min={0} max={100} step={5} value={coverage} onChange={e => setCoverage(Number(e.target.value))} className="w-full" />
+                <p className="text-xs text-center text-foreground font-medium">{coverage}%</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Pick a course above to add it with these settings, or search a code to add it directly.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Daily study budget */}
+      <div className="bg-card rounded-xl p-4 shadow-card flex items-center gap-3">
+        <Gauge className="h-4 w-4 text-primary shrink-0" />
+        <label className="text-sm text-foreground shrink-0">Hours you can study per day</label>
+        <input type="range" min={1} max={10} value={dailyHours} onChange={e => setDailyHours(Number(e.target.value))} className="flex-1" />
+        <span className="text-sm font-semibold text-foreground w-16 text-right">{dailyHours}h/day</span>
+      </div>
+
+      {/* Priority ranking */}
+      {ranked.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">Your Timetables</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {timetables.map((t, i) => (
-              <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="bg-card rounded-xl p-4 shadow-card flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${t.type === 'school' ? 'bg-accent/10 text-accent' : 'bg-secondary/10 text-secondary'}`}>
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{t.title}</p>
-                  <p className="text-xs text-muted-foreground">{t.type === 'school' ? 'School' : 'Exam'} • {new Date(t.created_at).toLocaleDateString()}</p>
-                </div>
-                <button onClick={() => deleteTimetable(t.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </motion.div>
-            ))}
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Flame className="h-4 w-4 text-destructive" /> Priority order</h3>
+          <div className="space-y-2">
+            {ranked.map(({ item, score, days }, i) => {
+              const u = levelOfUrgency(days);
+              return (
+                <motion.div key={item.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                  className="bg-card rounded-xl p-4 shadow-card flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{item.code} — {item.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Exam {new Date(item.examDate).toLocaleDateString()} · {days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} away`} · difficulty {item.difficulty}/5 · {item.coverage}% covered
+                    </p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${u.bg} ${u.color}`}>{u.label}</span>
+                  <span className="text-xs font-semibold text-foreground shrink-0 w-14 text-right">score {score}</span>
+                  <button onClick={() => removeItem(item.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition shrink-0">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Generated Plans */}
+      {/* Generated day-by-day plan */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">AI Study Plans</h3>
-        {plans.length === 0 ? (
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Sparkles className="h-4 w-4 text-secondary" /> Your study schedule</h3>
+        {plan.length === 0 ? (
           <div className="text-center py-12 bg-card rounded-xl border border-dashed border-border">
             <BookOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
-            <p className="text-foreground font-medium">No study plans yet</p>
-            <p className="text-sm text-muted-foreground mt-1">Upload timetables and generate your first AI plan</p>
+            <p className="text-foreground font-medium">No courses added yet</p>
+            <p className="text-sm text-muted-foreground mt-1">Add every course on your exam timetable to generate a prioritized day-by-day plan.</p>
           </div>
         ) : (
-          plans.map((plan, i) => (
-            <motion.div key={plan.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className="bg-card rounded-xl p-5 shadow-card border border-border/50">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div>
-                  <h4 className="font-semibold text-foreground flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-secondary" />
-                    Study Plan • Exam: {new Date(plan.exam_date).toLocaleDateString()}
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-1">Created {new Date(plan.created_at).toLocaleDateString()}</p>
+          <div className="space-y-3">
+            {plan.map((day, idx) => (
+              <motion.div key={day.date} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}
+                className="bg-card rounded-xl p-4 shadow-card border border-border/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold text-foreground">{day.dayLabel} · {new Date(day.date).toLocaleDateString()}</span>
+                  {idx === 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Today</span>}
+                  {day.tasks.some(t => t.reason.includes('TODAY')) && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-destructive/10 text-destructive font-medium flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Exam day
+                    </span>
+                  )}
                 </div>
-                <button onClick={() => deletePlan(plan.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              
-              {/* Schedule */}
-              <div className="space-y-3">
-                {plan.schedule.map((day, idx) => (
-                  <div key={idx} className="bg-muted/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium text-foreground">{day.day}</span>
-                      <span className="text-xs text-muted-foreground">• {day.date}</span>
-                    </div>
-                    <div className="space-y-1">
-                      {day.tasks.map((task, tidx) => (
-                        <div key={tidx} className="flex items-start gap-2 text-sm">
-                          <span className="text-muted-foreground">{task.time}:</span>
-                          <span className="text-foreground">{task.subject} - {task.activity}</span>
-                          <span className="text-xs text-muted-foreground ml-auto">{task.duration}</span>
-                        </div>
-                      ))}
-                    </div>
+                {day.tasks.length === 0 ? (
+                  <p className="text-xs text-muted-foreground pl-6">No active exams left to prepare for.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {day.tasks.map((t, tIdx) => (
+                      <div key={t.code + tIdx} className="flex items-center gap-2 text-sm pl-1">
+                        <span className="w-16 shrink-0 text-xs font-semibold text-foreground">{t.minutes}m</span>
+                        <span className="text-foreground font-medium shrink-0">{t.code}</span>
+                        <span className="text-muted-foreground truncate">{t.title}</span>
+                        <span className="ml-auto text-xs text-muted-foreground shrink-0 hidden sm:inline">{t.reason}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </motion.div>
-          ))
+                )}
+              </motion.div>
+            ))}
+          </div>
         )}
       </div>
     </div>

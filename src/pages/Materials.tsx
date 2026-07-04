@@ -4,6 +4,8 @@ import { Upload, Search, FileText, Trash2, Play, CloudUpload, Loader2, Eye, X, S
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { materialsApi, summarizerApi, chatApi, quizzesApi, type ApiMaterial } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { getDepartment, levelFromYearLabel, searchCourses, type Course, type LevelNum } from '@/lib/course-data';
 
 const fileTypeColors: Record<string, string> = {
   pdf: 'bg-destructive/10 text-destructive',
@@ -22,6 +24,10 @@ const AI_TABS = [
 ];
 
 export default function Materials() {
+  const { user } = useAuth();
+  const dept = user ? getDepartment(user.department) : undefined;
+  const [courseLevel, setCourseLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
+  const [courseQuery, setCourseQuery] = useState('');
   const [materials, setMaterials] = useState<ApiMaterial[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
@@ -67,6 +73,11 @@ export default function Materials() {
   const filtered = materials.filter(
     (m) => (filterSubject === 'All' || m.subject === filterSubject) && m.title.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Course-code / topic lookup, scoped to the student's department and chosen level only.
+  const courseResults: Course[] = courseQuery.trim()
+    ? searchCourses(courseQuery, dept?.id, courseLevel)
+    : [];
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -204,6 +215,42 @@ export default function Materials() {
           </button>
         </motion.div>
       )}
+
+      {/* Course code lookup — scoped to this student's department & level only */}
+      <div className="bg-card rounded-2xl p-4 shadow-card space-y-3 border border-border/50">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <p className="text-sm font-semibold text-foreground">Look up a course code</p>
+          <select value={courseLevel} onChange={e => setCourseLevel(Number(e.target.value) as LevelNum)}
+            className="text-xs rounded-lg border border-input bg-background px-2 py-1.5">
+            {[100, 200, 300, 400].map(l => <option key={l} value={l}>{l} Level</option>)}
+          </select>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input type="text" placeholder="e.g. CSC 301, CYB 405, cryptography…" value={courseQuery} onChange={(e) => setCourseQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+        </div>
+        {courseQuery.trim() && (
+          courseResults.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No {courseLevel} Level course in {dept?.name || 'your department'} matches "{courseQuery}". Try switching the level above.</p>
+          ) : (
+            <div className="space-y-2">
+              {courseResults.map(c => (
+                <div key={c.code} className="rounded-lg bg-muted/40 p-3">
+                  <p className="text-sm font-medium text-foreground">{c.code} — {c.title} <span className="text-xs text-muted-foreground font-normal">({c.units} units, {c.status === 'C' ? 'Compulsory' : 'Elective'})</span></p>
+                  {c.topics.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {c.topics.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-background text-muted-foreground border border-border/60">{t}</span>)}
+                    </div>
+                  )}
+                  <button onClick={() => setSearch(c.title.split(' ')[0])}
+                    className="text-xs text-primary mt-2 hover:underline">Filter your uploaded materials for this course</button>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
 
       {/* Search & Filter */}
       <div className="flex flex-col sm:flex-row gap-3">

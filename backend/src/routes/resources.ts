@@ -73,7 +73,7 @@ Each resource must directly relate to the student's uploaded subjects or departm
 });
 
 function defaultResources(subjects: string[], department?: string): ResourceSeed[] {
-  const base = subjects.length ? subjects : [department || 'General Studies', 'Academic Writing', 'Exam Preparation'];
+  const base = subjects.length ? subjects : [department || 'Computer Science', 'Data Structures and Algorithms', 'Cybersecurity Fundamentals'];
   return base.slice(0, 4).flatMap((subject) => ([
     { title: `${subject} – Full Lecture (YouTube)`, type: 'Video', subject, duration: '20 min', rating: 4.8, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(subject + ' university lecture')}` },
     { title: `${subject} – Wikipedia Overview`, type: 'Article', subject, duration: '10 min', rating: 4.6, url: `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(subject)}` },
