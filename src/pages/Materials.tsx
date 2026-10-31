@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { materialsApi, summarizerApi, chatApi, quizzesApi, type ApiMaterial } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { Markdown } from '@/components/Markdown';
 import { getDepartment, levelFromYearLabel, getCoursesForDept, dedupeCourses, searchCourses, type Course, type LevelNum } from '@/lib/course-data';
 
 const fileTypeColors: Record<string, string> = {
@@ -130,13 +131,12 @@ export default function Materials() {
 
   const handleUpload = async () => {
     if (!selectedFile) { toast.error('Please select a file'); return; }
-    if (!uploadCourse) { toast.error('Select the course this material belongs to'); return; }
     setUploading(true);
     try {
-      const subjectLabel = `${uploadCourse.code} — ${uploadCourse.title}`;
-      const { material } = await materialsApi.upload(selectedFile, uploadTitle || selectedFile.name, subjectLabel, uploadCourse.code);
+      const subjectLabel = uploadCourse ? `${uploadCourse.code} — ${uploadCourse.title}` : 'General (Not in syllabus)';
+      const { material } = await materialsApi.upload(selectedFile, uploadTitle || selectedFile.name, subjectLabel, uploadCourse?.code);
       setMaterials(prev => [material, ...prev]);
-      toast.success(`Material uploaded to ${uploadCourse.code}! Processing…`);
+      toast.success(uploadCourse ? `Material uploaded to ${uploadCourse.code}!` : 'Material uploaded (not tied to a course)!');
       setShowUpload(false);
       setSelectedFile(null);
       setUploadTitle('');
@@ -257,7 +257,7 @@ export default function Materials() {
               <button type="button" onClick={() => setCourseDropdownOpen(v => !v)}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm text-left focus:outline-none focus:ring-2 focus:ring-ring">
                 <span className={uploadCourse ? 'text-foreground truncate' : 'text-muted-foreground'}>
-                  {uploadCourse ? `${uploadCourse.code} — ${uploadCourse.title}` : 'Select course *'}
+                  {uploadCourse ? `${uploadCourse.code} — ${uploadCourse.title}` : 'Course (optional)'}
                 </span>
                 <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${courseDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -271,6 +271,10 @@ export default function Materials() {
                     </select>
                   </div>
                   <div className="max-h-56 overflow-y-auto">
+                    <button type="button" onClick={() => { setUploadCourse(null); setCourseDropdownOpen(false); }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition border-b border-border ${!uploadCourse ? 'bg-primary/10 text-primary' : 'text-foreground'}`}>
+                      <span className="font-medium">Not in my syllabus / General</span>
+                    </button>
                     {uploadCourseOptions.length === 0 ? (
                       <p className="text-xs text-muted-foreground p-3">No {uploadLevel} Level courses found for {dept?.name || 'your department'}.</p>
                     ) : (
@@ -286,11 +290,11 @@ export default function Materials() {
               )}
             </div>
           </div>
-          <button onClick={handleUpload} disabled={!selectedFile || uploading || !uploadCourse}
+          <button onClick={handleUpload} disabled={!selectedFile || uploading}
             className="w-full py-2.5 rounded-lg gradient-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2 hover:opacity-90 transition disabled:opacity-50">
             {uploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : <><Upload className="h-4 w-4" /> Upload Material</>}
           </button>
-          {!uploadCourse && <p className="text-xs text-muted-foreground text-center">Pick the exact course this material belongs to — it's how the app knows which syllabus topics it covers.</p>}
+          {!uploadCourse && <p className="text-xs text-muted-foreground text-center">No course picked — this will be saved as "General (Not in syllabus)". You can still use it for chat, quizzes and resources.</p>}
         </motion.div>
       )}
 
@@ -559,10 +563,10 @@ export default function Materials() {
                               <Sparkles className="h-3 w-3 text-primary-foreground" />
                             </div>
                           )}
-                          <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                          <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
                             msg.role === 'user' ? 'gradient-primary text-primary-foreground' : 'bg-muted text-foreground'
                           }`}>
-                            {msg.content}
+                            {msg.role === 'ai' ? <Markdown content={msg.content} /> : <span className="whitespace-pre-wrap">{msg.content}</span>}
                           </div>
                         </div>
                       ))}

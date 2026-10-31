@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Star, Bookmark, BookmarkCheck, ExternalLink, Search, Video, FileText, File, Sparkles, Loader2, GraduationCap, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { resourcesApi, type ApiResource } from '@/lib/api';
+import { resourcesApi, materialsApi, type ApiResource, type ApiMaterial } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { getDepartment, levelFromYearLabel, getCoursesForDept, dedupeCourses, findCourseByCode, LEVELS, type LevelNum } from '@/lib/course-data';
 import { toast } from 'sonner';
 
 const typeIcons: Record<string, React.ElementType> = { Video, Article: FileText, PDF: File };
@@ -12,6 +14,11 @@ interface IncomingCourse { code: string; title: string; topics?: string[] }
 export default function Resources() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const dept = user ? getDepartment(user.department) : undefined;
+  const [level, setLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
+  const courseOptions = dedupeCourses(getCoursesForDept(dept?.id || '', level)).sort((a, b) => a.code.localeCompare(b.code));
+  const [materials, setMaterials] = useState<ApiMaterial[]>([]);
   const [resources, setResources] = useState<ApiResource[]>([]);
   const [search, setSearch] = useState('');
   const [filterSubject, setFilterSubject] = useState('All');
@@ -21,7 +28,20 @@ export default function Resources() {
 
   useEffect(() => {
     resourcesApi.list().then(d => setResources(d.resources)).catch(() => toast.error('Failed to load resources'));
+    materialsApi.list().then(d => setMaterials(d.materials)).catch(() => { /* materials panel just stays empty */ });
   }, []);
+
+  // Materials that will be used for the active course: that course's uploads + uploads not tied to any course.
+  const usableMaterials = materials.filter(m => !activeCourse || !m.course_code || m.course_code === activeCourse.code);
+
+  const handleCourseSelect = (code: string) => {
+    if (!code) { clearCourseFocus(); return; }
+    const c = findCourseByCode(code);
+    if (!c) return;
+    const course = { code: c.code, title: c.title, topics: c.topics };
+    setActiveCourse(course);
+    generateResources(course);
+  };
 
   // Arrived here from "Study this course" / "Generate resources" elsewhere in the app.
   useEffect(() => {
@@ -51,7 +71,8 @@ export default function Resources() {
   const generateResources = async (course?: IncomingCourse | null) => {
     setGenerating(true);
     try {
-      const { resources: fresh } = await resourcesApi.generate(course || undefined);
+      const ids = materials.filter(m => !course || !m.course_code || m.course_code === course.code).map(m => m.id);
+      const { resources: fresh } = await resourcesApi.generate(course || undefined, ids);
       setResources(fresh);
       if (course) {
         setFilterSubject(`${course.code} — ${course.title}`);
@@ -73,13 +94,50 @@ export default function Resources() {
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-foreground">Resources Hub</h1>
         <button onClick={() => generateResources(activeCourse)} disabled={generating}
           className="gradient-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition disabled:opacity-60">
           {generating ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating</> : <><Sparkles className="h-4 w-4" /> {activeCourse ? `Regenerate for ${activeCourse.code}` : 'Generate'}</>}
         </button>
       </div>
+
+      {/* Course picker: courses for the student's level; picking one generates resources for it */}
+      <div className="bg-card rounded-xl p-4 shadow-card border border-border/50 flex flex-col sm:flex-row gap-3 sm:items-end">
+        <div className="sm:w-36 min-w-0">
+          <label className="text-xs text-muted-foreground">Level</label>
+          <select value={level} onChange={(e) => { setLevel(Number(e.target.value) as LevelNum); }}
+            className="mt-1 w-full px-3 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+            {LEVELS.map(l => <option key={l} value={l}>{l} Level</option>)}
+          </select>
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="text-xs text-muted-foreground">Course</label>
+          <select value={activeCourse && courseOptions.some(c => c.code === activeCourse.code) ? activeCourse.code : ''}
+            onChange={(e) => handleCourseSelect(e.target.value)} disabled={generating}
+            className="mt-1 w-full min-w-0 px-3 py-2.5 rounded-lg border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60">
+            <option value="">Select a course to generate resources…</option>
+            {courseOptions.map(c => <option key={c.code} value={c.code}>{c.code} — {c.title}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Uploaded materials that feed the generator */}
+      {usableMaterials.length > 0 && (
+        <div className="bg-card rounded-xl p-4 shadow-card border border-border/50 space-y-2">
+          <p className="text-sm font-semibold text-foreground">
+            Your uploaded materials {activeCourse ? `for ${activeCourse.code} (plus general uploads)` : ''}
+          </p>
+          <p className="text-xs text-muted-foreground">These are used as context when generating resources.</p>
+          <div className="flex flex-wrap gap-2">
+            {usableMaterials.map(m => (
+              <span key={m.id} className="max-w-full truncate text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary" title={m.subject}>
+                {m.title}{!m.course_code ? ' · General' : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Course focus banner — shown when arriving from "Study this course" / "Generate resources" */}
       {activeCourse && (
@@ -90,7 +148,7 @@ export default function Resources() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground">Generated for {activeCourse.code} — {activeCourse.title}</p>
-            <p className="text-xs text-muted-foreground">No study material was found for this course, so resources were generated from its syllabus topics instead.</p>
+            <p className="text-xs text-muted-foreground">{usableMaterials.length > 0 ? `Built from the course syllabus and ${usableMaterials.length} uploaded material${usableMaterials.length > 1 ? 's' : ''}.` : 'No uploaded material found for this course, so resources were built from its syllabus topics.'}</p>
           </div>
           <button onClick={clearCourseFocus} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition shrink-0" title="Clear focus">
             <X className="h-4 w-4" />

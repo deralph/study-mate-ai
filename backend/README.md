@@ -1,6 +1,6 @@
-# Study Mate AI — Backend
+# Study Companion — Backend
 
-A free, lightweight Node.js + TypeScript backend for the Study Mate AI frontend.
+A free, lightweight Node.js + TypeScript backend for the Study Companion frontend.
 Built with **Express**, local **SQLite** for development, and optional **Neon/Postgres** for production persistence.
 
 ## Stack (all free)

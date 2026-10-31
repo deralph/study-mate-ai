@@ -36,7 +36,7 @@ function hasCloudinary() {
 }
 
 function cloudinaryFolder() {
-  return process.env.CLOUDINARY_FOLDER || `study-mate-ai/${process.env.NODE_ENV || 'development'}`;
+  return process.env.CLOUDINARY_FOLDER || `study-companion/${process.env.NODE_ENV || 'development'}`;
 }
 
 function signCloudinaryParams(params: Record<string, string | number | undefined>) {

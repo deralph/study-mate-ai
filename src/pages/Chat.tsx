@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Send, Sparkles, FileQuestion, FileText, RotateCcw, AlertCircle } from 'lucide-react';
 import { chatApi, type ApiChatMessage } from '@/lib/api';
 import { toast } from 'sonner';
+import { Markdown } from '@/components/Markdown';
 
 const quickChips = [
   { label: 'Explain this concept to me', icon: Sparkles },
@@ -64,7 +65,7 @@ export default function Chat() {
             <Sparkles className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-foreground">StudyAI Assistant</h1>
+            <h1 className="text-base font-semibold text-foreground">Study Companion</h1>
             <p className="text-xs text-secondary">● Powered by Gemini</p>
           </div>
         </div>
@@ -80,7 +81,7 @@ export default function Chat() {
             <div className="w-16 h-16 rounded-full gradient-hero flex items-center justify-center mb-4">
               <Sparkles className="h-8 w-8 text-primary-foreground" />
             </div>
-            <h2 className="text-lg font-semibold text-foreground">How can I help you study?</h2>
+            <h2 className="text-lg font-semibold text-foreground">Hi, how can I help you study today?</h2>
             <p className="text-sm text-muted-foreground mt-1 max-w-sm">Ask me anything. I can explain concepts, create quizzes, and summarize your uploaded notes.</p>
           </div>
         )}
@@ -89,7 +90,9 @@ export default function Chat() {
           <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             className={`flex min-w-0 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[92%] overflow-hidden rounded-2xl px-3 py-3 text-sm sm:max-w-[85%] sm:px-4 lg:max-w-[70%] ${msg.role === 'user' ? 'gradient-primary text-primary-foreground rounded-br-md' : 'bg-card shadow-card text-foreground rounded-bl-md'}`}>
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
+              {msg.role === 'ai'
+                ? <Markdown content={msg.content} />
+                : <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>}
               {msg.references && msg.references.length > 0 && (
                 <div className="mt-2 flex gap-1 flex-wrap">
                   {msg.references.map((ref) => (

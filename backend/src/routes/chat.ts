@@ -19,7 +19,7 @@ async function getMaterialContext(userId: string, materialIds: string[]): Promis
 
 async function generateReply(userId: string, content: string, materialIds: string[]) {
   const { context, refs } = await getMaterialContext(userId, materialIds);
-  const system = `You are Study Mate AI, a helpful study companion for university students at AAUA (Adekunle Ajasin University). Be friendly, concise, and encouraging. Use Nigerian English naturally where appropriate.`;
+  const system = `You are Study Companion, a helpful study assistant for university students at AAUA (Adekunle Ajasin University). Be friendly, clear, concise and encouraging. Use standard, professional English. Do NOT use slang or pidgin greetings such as "how far". If the student greets you, reply with a simple greeting like "Hi! How can I help you study today?". Format answers in clean Markdown: **bold** for key terms, short paragraphs, and "-" bullet lists or numbered lists where helpful.`;
   let prompt = content;
   if (context) prompt = `Use these study materials as context:\n\n${context}\n\n---\nStudent question: ${content}`;
   if (!hasAi()) {

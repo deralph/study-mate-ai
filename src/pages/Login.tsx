@@ -8,7 +8,7 @@ import { authApi } from '@/lib/api';
 import { ThemeToggle } from '@/lib/theme';
 import { DEPARTMENTS as FACULTY_DEPARTMENTS, LEVELS } from '@/lib/course-data';
 
-// Study Mate AI is scoped to the Faculty of Computing only — the department
+// Study Companion is scoped to the Faculty of Computing only — the department
 // list is pulled straight from the faculty's course catalog/syllabus.
 const DEPARTMENTS = FACULTY_DEPARTMENTS.map(d => d.name);
 const YEARS = LEVELS.map(l => `${l} Level`);
@@ -59,7 +59,7 @@ export default function Login() {
           year,
           university: 'Adekunle Ajasin University (AAUA)',
         });
-        toast.success('Account created! Welcome to Study Mate AI 🎉');
+        toast.success('Account created! Welcome to Study Companion 🎉');
       } else {
         await login(email, password);
         toast.success('Welcome back!');
@@ -94,7 +94,7 @@ export default function Login() {
           <div className="w-16 h-16 rounded-2xl gradient-hero flex items-center justify-center mx-auto mb-4 shadow-elevated">
             <BookOpen className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Study Mate AI</h1>
+          <h1 className="text-2xl font-bold text-foreground">Study Companion</h1>
           <p className="text-sm text-muted-foreground mt-1">Your AI-powered study companion · AAUA Faculty of Computing</p>
         </div>
 

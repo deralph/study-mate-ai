@@ -249,8 +249,11 @@ export const remindersApi = {
 export const resourcesApi = {
   list: () => get<{ resources: ApiResource[] }>('/resources'),
 
-  generate: (course?: { code: string; title: string; topics?: string[] }) =>
-    post<{ resources: ApiResource[] }>('/resources/generate', course ? { courseCode: course.code, courseTitle: course.title, topics: course.topics } : {}),
+  generate: (course?: { code: string; title: string; topics?: string[] }, materialIds?: string[]) =>
+    post<{ resources: ApiResource[] }>('/resources/generate', {
+      ...(course ? { courseCode: course.code, courseTitle: course.title, topics: course.topics } : {}),
+      ...(materialIds?.length ? { materialIds } : {}),
+    }),
 
   create: (data: { title: string; type: string; subject: string; url: string; duration?: string; rating?: number }) =>
     post<{ resource: ApiResource }>('/resources', data),
@@ -276,9 +279,9 @@ export const studyPlanApi = {
   get: (id: string) =>
     get<{ plan: { id: string; exam_date: string; subject: string; plan: { day: number; date: string; subject: string; focus: string; topics: string[]; hours: number; type: string }[] } }>(`/study-plan/${id}`),
 
-  generate: (examDate: string, subject: string) =>
+  generate: (exams: { date: string; subject: string; courseCode?: string; topics?: string[] }[]) =>
     post<{ plan: { id: string; examDate: string; subject: string; plan: { day: number; date: string; subject: string; focus: string; topics: string[]; hours: number; type: string }[] } }>(
-      '/study-plan/generate', { examDate, subject }
+      '/study-plan/generate', { exams }
     ),
 };
 

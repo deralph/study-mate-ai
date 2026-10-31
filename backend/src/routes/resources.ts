@@ -38,8 +38,24 @@ resourcesRouter.post('/generate', async (req: AuthedRequest, res) => {
   const { courseCode, courseTitle, topics } = req.body ?? {};
   const isCourseScoped = Boolean(courseCode && courseTitle);
 
-  const materials: any[] = await db.prepare('SELECT title, subject FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 12').all(req.userId!);
+  // Uploaded materials the AI may use. Previously course-scoped generation ignored
+  // uploads entirely (it only used syllabus topics). Now we pull this course's uploads
+  // PLUS uploads not tied to any course ("General / Not in syllabus"), with a text excerpt.
+  const requestedIds: string[] = Array.isArray(req.body?.materialIds) ? req.body.materialIds.map(String) : [];
+  let materials: any[];
+  if (requestedIds.length) {
+    const ph = requestedIds.map(() => '?').join(',');
+    materials = await db.prepare(`SELECT id, title, subject, course_code, text_content FROM materials WHERE user_id=? AND id IN (${ph}) ORDER BY upload_date DESC LIMIT 12`).all(req.userId!, ...requestedIds);
+  } else if (isCourseScoped) {
+    materials = await db.prepare(`SELECT id, title, subject, course_code, text_content FROM materials WHERE user_id=? AND (course_code=? OR course_code IS NULL OR course_code='') ORDER BY upload_date DESC LIMIT 12`).all(req.userId!, courseCode);
+  } else {
+    materials = await db.prepare('SELECT id, title, subject, course_code, text_content FROM materials WHERE user_id=? ORDER BY upload_date DESC LIMIT 12').all(req.userId!);
+  }
   const subjects = [...new Set(materials.map(m => String(m.subject || '').trim()).filter(Boolean))];
+  const materialContext = materials
+    .map(m => `- ${m.title}: ${String(m.text_content || '').replace(/\s+/g, ' ').slice(0, 600)}`)
+    .join('\n');
+  const materialsForPrompt = materials.map(m => ({ title: m.title, subject: m.subject }));
 
   // The exact "subject" tag these new resources will be filed under — used both
   // for prompting the AI and for scoping which old resources get replaced.
@@ -52,7 +68,7 @@ resourcesRouter.post('/generate', async (req: AuthedRequest, res) => {
         resources = await aiJson<ResourceSeed[]>(`Create 8 high-quality, diverse study resources for a Faculty of Computing student studying the course "${courseCode}: ${courseTitle}".
 Syllabus topics covered in this course: ${JSON.stringify(topics || [])}.
 Student profile: ${JSON.stringify(user)}
-Return STRICT JSON array only (no markdown, no extra text):
+${materialContext ? `The student uploaded these materials; pick topics that match what they are actually studying:\n${materialContext}\n` : ''}Return STRICT JSON array only (no markdown, no extra text):
 [{"title":"descriptive resource title mentioning the specific topic","type":"Video|Article|PDF","subject":"${courseCode} — ${courseTitle}","topic":"the specific syllabus topic this resource covers","duration":"15 min","rating":4.8,"url":"REAL_URL"}]
 URL rules (must be real, working URLs):
 - YouTube videos: https://www.youtube.com/results?search_query=ENCODED_QUERY
@@ -73,7 +89,8 @@ Every resource's "subject" field must be exactly "${courseCode} — ${courseTitl
     try {
       resources = await aiJson<ResourceSeed[]>(`Create 10 high-quality, diverse study resources for this Nigerian university student.
 Profile: ${JSON.stringify(user)}
-Uploaded materials/subjects: ${JSON.stringify(materials)}
+Uploaded materials/subjects: ${JSON.stringify(materialsForPrompt)}
+${materialContext ? `Material excerpts:\n${materialContext}` : ''}
 Return STRICT JSON array only (no markdown, no extra text):
 [{"title":"descriptive resource title","type":"Video|Article|PDF","subject":"exact course name","duration":"15 min","rating":4.8,"url":"REAL_URL"}]
 URL rules (must be real, working URLs):

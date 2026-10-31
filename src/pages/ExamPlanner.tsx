@@ -167,23 +167,23 @@ export default function ExamPlanner() {
   }, [upcoming, today, dailyHours]);
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+    <div className="w-full min-w-0 max-w-5xl mx-auto p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
             <CalendarCheck className="h-6 w-6 text-primary" /> Exam Planner
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Add every course on your exam timetable — the planner prioritizes what's hardest, closest, and least covered.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <select value={level} onChange={e => setLevel(Number(e.target.value) as LevelNum)}
             className="text-sm rounded-lg border border-input bg-background px-2 py-2">
             {[100, 200, 300, 400].map(l => <option key={l} value={l}>{l} Level</option>)}
           </select>
           <button onClick={() => setShowAdd(v => !v)}
-            className="gradient-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition">
+            className="flex-1 sm:flex-none justify-center gradient-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:opacity-90 transition">
             <Plus className="h-4 w-4" /> Add Exam
           </button>
         </div>
@@ -193,7 +193,7 @@ export default function ExamPlanner() {
       <AnimatePresence>
         {showAdd && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="bg-card rounded-xl p-5 shadow-card space-y-4 overflow-hidden">
+            className="bg-card rounded-xl p-3 sm:p-5 shadow-card space-y-4 overflow-hidden">
             <div className="relative">
               <input type="text" value={codeQuery} onChange={e => setCodeQuery(e.target.value)}
                 placeholder={`Search a ${dept?.name || 'faculty'} course code (e.g. CSC 301)…`}
@@ -209,8 +209,8 @@ export default function ExamPlanner() {
                 </div>
               )}
               {codeQuery.trim() && courseMatches.length === 0 && (
-                <div className="mt-2 flex items-center gap-2">
-                  <p className="text-xs text-muted-foreground flex-1">Not found in the {level} Level catalog. Add it anyway as a custom course:</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">Not found in the {level} Level catalog. Add it anyway as a custom course:</p>
                   <button onClick={() => addItem(codeQuery.trim().toUpperCase(), codeQuery.trim())}
                     className="text-xs px-2 py-1 rounded-lg bg-primary/10 text-primary font-medium hover:bg-primary/20">Add "{codeQuery.trim()}"</button>
                 </div>
@@ -218,10 +218,10 @@ export default function ExamPlanner() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0">
                 <label className="text-xs text-muted-foreground">Exam date</label>
                 <input type="date" value={examDate} min={today} onChange={e => setExamDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm" />
+                  className="w-full min-w-0 px-3 py-2 rounded-lg border border-input bg-background text-sm" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Difficulty for you (1 easy – 5 very hard)</label>
@@ -240,11 +240,11 @@ export default function ExamPlanner() {
       </AnimatePresence>
 
       {/* Daily study budget */}
-      <div className="bg-card rounded-xl p-4 shadow-card flex items-center gap-3">
+      <div className="bg-card rounded-xl p-3 sm:p-4 shadow-card flex flex-wrap items-center gap-x-3 gap-y-2">
         <Gauge className="h-4 w-4 text-primary shrink-0" />
-        <label className="text-sm text-foreground shrink-0">Hours you can study per day</label>
-        <input type="range" min={1} max={10} value={dailyHours} onChange={e => setDailyHours(Number(e.target.value))} className="flex-1" />
-        <span className="text-sm font-semibold text-foreground w-16 text-right">{dailyHours}h/day</span>
+        <label className="text-sm text-foreground">Hours you can study per day</label>
+        <input type="range" min={1} max={10} value={dailyHours} onChange={e => setDailyHours(Number(e.target.value))} className="flex-1 min-w-[8rem]" />
+        <span className="text-sm font-semibold text-foreground text-right">{dailyHours}h/day</span>
       </div>
 
       {/* Priority ranking */}
@@ -256,17 +256,17 @@ export default function ExamPlanner() {
               const u = levelOfUrgency(days);
               return (
                 <motion.div key={item.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                  className="bg-card rounded-xl p-4 shadow-card flex items-center gap-3">
+                  className="bg-card rounded-xl p-3 sm:p-4 shadow-card flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2">
                   <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{item.code} — {item.title}</p>
+                  <div className="flex-1 min-w-[10rem] basis-[calc(100%-6rem)] sm:basis-auto">
+                    <p className="text-sm font-medium text-foreground break-words sm:truncate">{item.code} — {item.title}</p>
                     <p className="text-xs text-muted-foreground">
                       Exam {new Date(item.examDate).toLocaleDateString()} · {days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} away`} · difficulty {item.difficulty}/5 · {item.coverage}% covered
                     </p>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${u.bg} ${u.color}`}>{u.label}</span>
-                  <span className="text-xs font-semibold text-foreground shrink-0 w-14 text-right">score {score}</span>
-                  <button onClick={() => removeItem(item.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition shrink-0">
+                  <span className="text-xs font-semibold text-foreground shrink-0 sm:w-14 sm:text-right">score {score}</span>
+                  <button onClick={() => removeItem(item.id)} className="ml-auto sm:ml-0 p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition shrink-0">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </motion.div>
@@ -289,8 +289,8 @@ export default function ExamPlanner() {
           <div className="space-y-3">
             {plan.map((day, idx) => (
               <motion.div key={day.date} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}
-                className="bg-card rounded-xl p-4 shadow-card border border-border/50">
-                <div className="flex items-center gap-2 mb-2">
+                className="bg-card rounded-xl p-3 sm:p-4 shadow-card border border-border/50 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
                   <Clock className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold text-foreground">{day.dayLabel} · {new Date(day.date).toLocaleDateString()}</span>
                   {idx === 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Today</span>}
@@ -305,11 +305,11 @@ export default function ExamPlanner() {
                 ) : (
                   <div className="space-y-1.5">
                     {day.tasks.map((t, tIdx) => (
-                      <div key={t.code + tIdx} className="flex items-center gap-2 text-sm pl-1">
-                        <span className="w-16 shrink-0 text-xs font-semibold text-foreground">{t.minutes}m</span>
+                      <div key={t.code + tIdx} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm pl-1 min-w-0">
+                        <span className="w-12 sm:w-16 shrink-0 text-xs font-semibold text-foreground">{t.minutes}m</span>
                         <span className="text-foreground font-medium shrink-0">{t.code}</span>
-                        <span className="text-muted-foreground truncate">{t.title}</span>
-                        <span className="ml-auto text-xs text-muted-foreground shrink-0 hidden sm:inline">{t.reason}</span>
+                        <span className="text-muted-foreground min-w-0 flex-1 basis-40 break-words">{t.title}</span>
+                        <span className="w-full sm:w-auto sm:ml-auto pl-14 sm:pl-0 text-xs text-muted-foreground">{t.reason}</span>
                       </div>
                     ))}
                   </div>

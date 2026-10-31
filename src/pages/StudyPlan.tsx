@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CalendarDays, BookOpen, Clock, CheckCircle, Sparkles, Target, Loader2 } from 'lucide-react';
+import { CalendarDays, BookOpen, Clock, CheckCircle, Sparkles, Target, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { studyPlanApi } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { getDepartment, levelFromYearLabel, getCoursesForDept, dedupeCourses, LEVELS, type LevelNum } from '@/lib/course-data';
+
+interface ExamRow { id: string; date: string; courseCode: string; custom: string }
+const newRow = (): ExamRow => ({ id: Math.random().toString(36).slice(2), date: '', courseCode: '', custom: '' });
+const OTHER = '__other__';
 
 interface DayPlan {
   day: number;
@@ -26,23 +32,42 @@ const typeLabels = {
 };
 
 export default function StudyPlan() {
-  const [examDate, setExamDate] = useState('');
-  const [subject, setSubject] = useState('');
+  const { user } = useAuth();
+  const dept = user ? getDepartment(user.department) : undefined;
+  const [level, setLevel] = useState<LevelNum>(user ? levelFromYearLabel(user.year) : 100);
+  const courseOptions = dedupeCourses(getCoursesForDept(dept?.id || '', level)).sort((a, b) => a.code.localeCompare(b.code));
+  const [exams, setExams] = useState<ExamRow[]>([newRow()]);
   const [plan, setPlan] = useState<DayPlan[]>([]);
   const [planSubject, setPlanSubject] = useState('');
   const [generated, setGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
+  const today = new Date().toISOString().split('T')[0];
+
+  const updateRow = (id: string, patch: Partial<ExamRow>) => setExams(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  const removeRow = (id: string) => setExams(prev => prev.length > 1 ? prev.filter(r => r.id !== id) : prev);
 
   const handleGenerate = async () => {
-    if (!examDate) { toast.error('Please select an exam date'); return; }
-    if (new Date(examDate) <= new Date()) { toast.error('Exam date must be in the future'); return; }
+    const payload: { date: string; subject: string; courseCode?: string; topics?: string[] }[] = [];
+    for (const [i, r] of exams.entries()) {
+      if (!r.date) { toast.error(`Exam ${i + 1}: pick a date`); return; }
+      if (new Date(r.date) < new Date(today)) { toast.error(`Exam ${i + 1}: date must be today or later`); return; }
+      if (!r.courseCode) { toast.error(`Exam ${i + 1}: choose a course`); return; }
+      if (r.courseCode === OTHER) {
+        if (!r.custom.trim()) { toast.error(`Exam ${i + 1}: type the course name`); return; }
+        payload.push({ date: r.date, subject: r.custom.trim() });
+      } else {
+        const c = courseOptions.find(c => c.code === r.courseCode);
+        if (!c) { toast.error(`Exam ${i + 1}: choose a course`); return; }
+        payload.push({ date: r.date, subject: `${c.code} — ${c.title}`, courseCode: c.code, topics: c.topics });
+      }
+    }
     setLoading(true);
     try {
-      const { plan: result } = await studyPlanApi.generate(examDate, subject);
+      const { plan: result } = await studyPlanApi.generate(payload);
       setPlan(result.plan as DayPlan[]);
       setPlanSubject(result.subject);
       setGenerated(true);
-      toast.success(`AI study plan generated! ${result.plan.length} days planned`);
+      toast.success(`Study plan ready: ${payload.length} exam${payload.length > 1 ? 's' : ''}, ${result.plan.length} sessions`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to generate plan');
     } finally {
@@ -56,28 +81,56 @@ export default function StudyPlan() {
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <CalendarDays className="h-6 w-6 text-primary" /> Study Plan Generator
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">Enter your exam date and get a personalized daily reading plan</p>
+        <p className="text-sm text-muted-foreground mt-1">Add all your exams (date + course) and get one reading plan that covers every course</p>
       </div>
 
       {/* Input Section */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         className="bg-card/80 backdrop-blur-sm rounded-xl p-5 shadow-card border border-border/50 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground flex items-center gap-1">
-              <Target className="h-3 w-3" /> Exam Date
-            </label>
-            <input type="date" value={examDate} onChange={(e) => setExamDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground flex items-center gap-1">
-              <BookOpen className="h-3 w-3" /> Subject (optional)
-            </label>
-            <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Data Structures, Calculus"
-              className="w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Course level</span>
+          <select value={level} onChange={(e) => { setLevel(Number(e.target.value) as LevelNum); setExams(prev => prev.map(r => r.courseCode === OTHER ? r : { ...r, courseCode: '' })); }}
+            className="rounded-lg border border-input bg-background px-2 py-1 text-xs text-foreground">
+            {LEVELS.map(l => <option key={l} value={l}>{l} Level</option>)}
+          </select>
+        </div>
+        <div className="space-y-3">
+          {exams.map((r, idx) => (
+            <div key={r.id} className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-foreground">Exam {idx + 1}</span>
+                {exams.length > 1 && (
+                  <button onClick={() => removeRow(r.id)} className="p-1 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition" title="Remove exam">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1 min-w-0">
+                  <label className="text-xs text-muted-foreground flex items-center gap-1"><Target className="h-3 w-3" /> Exam date</label>
+                  <input type="date" value={r.date} min={today} onChange={(e) => updateRow(r.id, { date: e.target.value })}
+                    className="w-full min-w-0 px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <label className="text-xs text-muted-foreground flex items-center gap-1"><BookOpen className="h-3 w-3" /> Course</label>
+                  <select value={r.courseCode} onChange={(e) => updateRow(r.id, { courseCode: e.target.value })}
+                    className="w-full min-w-0 px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+                    <option value="">Select course…</option>
+                    {courseOptions.map(c => <option key={c.code} value={c.code}>{c.code} — {c.title}</option>)}
+                    <option value={OTHER}>Other (type a course name)</option>
+                  </select>
+                </div>
+              </div>
+              {r.courseCode === OTHER && (
+                <input type="text" value={r.custom} onChange={(e) => updateRow(r.id, { custom: e.target.value })} placeholder="e.g. Data Structures"
+                  className="w-full px-3 py-2.5 rounded-xl border border-input bg-background/50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+              )}
+            </div>
+          ))}
+          <button onClick={() => setExams(prev => [...prev, newRow()])}
+            className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+            <Plus className="h-4 w-4" /> Add another exam
+          </button>
         </div>
         <button onClick={handleGenerate} disabled={loading}
           className="w-full sm:w-auto px-6 py-3 rounded-xl gradient-primary text-primary-foreground font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition shadow-elevated disabled:opacity-60">
@@ -91,10 +144,10 @@ export default function StudyPlan() {
           <div className="bg-card rounded-xl p-4 shadow-card border border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <p className="text-xs text-muted-foreground">Generated plan</p>
-              <h2 className="text-lg font-bold text-foreground">{planSubject || subject || 'Study'} until {examDate}</h2>
+              <h2 className="text-lg font-bold text-foreground">{exams.length > 1 ? `${exams.length} exams` : (planSubject || 'Study')} study plan</h2>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>{plan.length} days</span>
+              <span>{new Set(plan.map(d => d.date)).size} days</span>
               <span>{plan.reduce((sum, day) => sum + Number(day.hours || 0), 0)} study hours</span>
             </div>
           </div>
@@ -105,7 +158,7 @@ export default function StudyPlan() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-muted-foreground" /> Rest</span>
           </div>
           {plan.map((day, i) => (
-            <motion.div key={day.day} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
+            <motion.div key={`${day.date}-${day.subject}-${i}`} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.03, 0.6) }}
               className={`rounded-xl p-4 shadow-card border-l-4 ${typeStyles[day.type]} flex items-start gap-4`}>
               <div className="text-center min-w-[50px]">
                 <p className="text-lg font-bold text-foreground">Day {day.day}</p>
@@ -136,7 +189,7 @@ export default function StudyPlan() {
         <div className="text-center py-16">
           <CalendarDays className="h-16 w-16 mx-auto text-muted-foreground/20 mb-4" />
           <p className="text-foreground font-medium">No plan generated yet</p>
-          <p className="text-sm text-muted-foreground mt-1">Set your exam date above to get started</p>
+          <p className="text-sm text-muted-foreground mt-1">Add your exams above to get started</p>
         </div>
       )}
     </div>

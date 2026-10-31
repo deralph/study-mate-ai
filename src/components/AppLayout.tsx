@@ -72,16 +72,64 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch { /* audio not supported */ }
   };
 
+  // Active repeating alarms, keyed by reminder fire-key, so they can be dismissed/snoozed.
+  const ringersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const RING_COUNT = 5;            // how many times a reminder rings
+  const RING_INTERVAL_MS = 60_000; // gap between rings (1 minute)
+  const SNOOZE_MS = 5 * 60_000;    // snooze length (5 minutes)
+
+  const stopRinging = (key: string) => {
+    const t = ringersRef.current.get(key);
+    if (t) clearInterval(t);
+    ringersRef.current.delete(key);
+    toast.dismiss(key);
+  };
+
+  const ring = (key: string, title: string, round: number) => {
+    playAlarm();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(`⏰ ${title}`, {
+          body: `Study time! 📚 Reminder ${round}/${RING_COUNT} — click to open Study Companion`,
+          icon: '/favicon.ico',
+          requireInteraction: true,
+          tag: key, // replaces the previous ring instead of stacking
+        });
+      } catch { /* notifications unavailable */ }
+    }
+    toast(`🔔 Reminder: ${title}`, {
+      id: key,
+      duration: RING_INTERVAL_MS,
+      description: `Ring ${round} of ${RING_COUNT}`,
+      action: { label: 'Dismiss', onClick: () => stopRinging(key) },
+      cancel: { label: 'Snooze 5m', onClick: () => { stopRinging(key); startRinging(`${key}-snz${Date.now()}`, title, SNOOZE_MS); } },
+    });
+  };
+
+  const startRinging = (key: string, title: string, delayMs = 0) => {
+    const begin = () => {
+      let round = 1;
+      ring(key, title, round);
+      const timer = setInterval(() => {
+        round += 1;
+        if (round > RING_COUNT) { stopRinging(key); return; }
+        ring(key, title, round);
+      }, RING_INTERVAL_MS);
+      ringersRef.current.set(key, timer);
+    };
+    if (delayMs > 0) {
+      const wait = setTimeout(begin, delayMs);
+      // store a clearable handle so unmount cleanup works
+      ringersRef.current.set(`${key}-wait`, wait as unknown as ReturnType<typeof setInterval>);
+    } else begin();
+  };
+
   useEffect(() => {
-    if (!('Notification' in window)) return;
-    
-    // Request permission on first load if not decided
-    if (Notification.permission === 'default') {
+    if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-    
+
     const checkReminders = async () => {
-      if (Notification.permission !== 'granted') return;
       const now = new Date();
       const hhmm = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       const dayKey = now.toDateString();
@@ -91,25 +139,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const key = `${r.id}-${hhmm}-${dayKey}`;
           if (!firedRef.current.has(key)) {
             firedRef.current.add(key);
-            // Play alarm sound
-            playAlarm();
-            // Show browser notification
-            new Notification(`⏰ ${r.title}`, { 
-              body: 'Study time! 📚 Click to open Study Mate AI', 
-              icon: '/favicon.ico',
-              requireInteraction: true 
-            });
-            // Show in-app toast
-            toast.info(`🔔 Reminder: ${r.title}`, { duration: 10000 });
+            startRinging(key, r.title);
           }
         });
       } catch { /* silent */ }
     };
-    
-    // Check every 15 seconds for more responsiveness
+
     const id = setInterval(checkReminders, 15_000);
     checkReminders();
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      ringersRef.current.forEach(t => { clearInterval(t); clearTimeout(t as unknown as ReturnType<typeof setTimeout>); });
+      ringersRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = () => {
@@ -125,7 +168,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="p-6 border-b border-border/50">
           <h1 className="text-xl font-bold text-primary flex items-center gap-2">
             <BookOpen className="h-6 w-6" />
-            Study Mate AI
+            Study Companion
           </h1>
           {user && (
             <p className="text-xs text-muted-foreground mt-1 truncate">{user.name} · {user.department}</p>
