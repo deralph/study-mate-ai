@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '../db.js';
 import { signToken, requireAuth, publicUser, type AuthedRequest } from '../auth-middleware.js';
-import { uid } from '../util.js';
+import { uid, touchStreak } from '../util.js';
 
 export const authRouter = Router();
 
@@ -45,15 +45,7 @@ authRouter.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
   // Update study streak
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  if (user.last_active_date === today) {
-    // already active today — no change
-  } else if (user.last_active_date === yesterday) {
-    await db.prepare('UPDATE users SET study_streak = study_streak + 1, last_active_date = ? WHERE id = ?').run(today, user.id);
-  } else {
-    await db.prepare('UPDATE users SET study_streak = 1, last_active_date = ? WHERE id = ?').run(today, user.id);
-  }
+  await touchStreak(user.id);
   const freshUser = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ token: signToken(user.id), user: publicUser(freshUser) });
 });
@@ -76,6 +68,7 @@ authRouter.post('/forgot-password', async (req, res) => {
 });
 
 authRouter.get('/me', requireAuth, async (req: AuthedRequest, res) => {
+  await touchStreak(req.userId!);
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId!);
   res.json({ user: publicUser(user) });
 });
