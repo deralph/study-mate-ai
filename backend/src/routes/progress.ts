@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, type AuthedRequest } from '../auth-middleware.js';
-import { uid } from '../util.js';
+import { uid, touchStreak } from '../util.js';
 
 export const progressRouter = Router();
 progressRouter.use(requireAuth);
@@ -84,19 +84,8 @@ progressRouter.post('/session', async (req: AuthedRequest, res) => {
   await db.prepare('INSERT INTO study_sessions (id, user_id, subject, duration_minutes, activity_type) VALUES (?,?,?,?,?)')
     .run(uid(), req.userId!, subject, Number(durationMinutes), activityType || 'study');
   // Update streak (simple: if last session was yesterday or today, +1; else reset to 1)
-  const user: any = await db.prepare('SELECT study_streak, last_active_date FROM users WHERE id=?').get(req.userId!);
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  let newStreak = user.study_streak;
-  if (user.last_active_date === today) {
-    // same day, no change
-  } else if (user.last_active_date === yesterday) {
-    newStreak += 1;
-  } else {
-    newStreak = 1;
-  }
-  await db.prepare('UPDATE users SET study_streak=?, last_active_date=?, points=points+5 WHERE id=?')
-    .run(newStreak, today, req.userId!);
+    await touchStreak(req.userId!);
+  await db.prepare('UPDATE users SET points=points+5 WHERE id=?').run(req.userId!);
   await db.prepare('UPDATE users SET level=(CAST(points / 250 AS INTEGER) + 1) WHERE id=?').run(req.userId!);
   res.json({ message: 'Logged' });
 });
